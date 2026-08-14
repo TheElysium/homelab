@@ -1,0 +1,55 @@
+# --- Terraform ---
+# Répertoire des providers téléchargés (~60 Mo, reconstruit par `terraform init`)
+.terraform/
+
+# État de l'infrastructure : contient les identifiants en clair
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Valeurs réelles des variables, dont le token d'API Proxmox
+*.tfvars
+*.tfvars.json
+# ...mais le modèle anonymisé reste versionné
+!*.tfvars.example
+
+# .terraform.lock.hcl est VOLONTAIREMENT versionné : il fige les sommes de
+# contrôle des providers et garantit une reconstruction identique.
+
+# --- Secrets et accès ---
+# Les clés SSH vivent hors du dépôt (~/.ssh/homelab, cf. §8.1 de la spec).
+# Ces règles sont un filet de sécurité contre une copie accidentelle.
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+!*.pub
+
+# Accès au cluster
+kubeconfig
+kubeconfig-*
+*.kubeconfig
+.kube/
+
+# Fichiers déchiffrés par SOPS, le jour où GitOps sera mis en place
+*.dec.yaml
+*.dec.yml
+
+# --- Ansible ---
+*.retry
+ansible/collections/
+.vault_pass
+
+# --- Documents de travail ---
+# Spécifications de conception, non versionnées (décision utilisateur)
+docs/superpowers/
+
+# --- Système et éditeurs ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/
