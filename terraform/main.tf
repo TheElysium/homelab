@@ -35,15 +35,51 @@ locals {
 
   ssh_public_key_path = pathexpand("~/.ssh/homelab.pub")
 
-  nodes = {
+  vms = {
     "k8s-master" = {
+      role          = "control-plane"
       vm_id         = 200
       cpu_cores     = 2 # kubeadm minimum
       memory_mb     = 3072
       memory_min    = 2048
       disk_gb       = 20
+      data_disk_gb  = 0
       lan_cidr      = "192.168.1.200/24"
       internal_cidr = "10.0.10.11/24"
+    }
+    "k8s-worker-1" = {
+      role          = "worker"
+      vm_id         = 201
+      cpu_cores     = 2
+      memory_mb     = 3584
+      memory_min    = 2560
+      disk_gb       = 32
+      data_disk_gb  = 0
+      lan_cidr      = "192.168.1.201/24"
+      internal_cidr = "10.0.10.12/24"
+    }
+
+    "k8s-worker-2" = {
+      role          = "worker"
+      vm_id         = 202
+      cpu_cores     = 2
+      memory_mb     = 3584
+      memory_min    = 2560
+      disk_gb       = 32
+      data_disk_gb  = 0
+      lan_cidr      = "192.168.1.202/24"
+      internal_cidr = "10.0.10.13/24"
+    }
+    "nfs-server" = {
+      role          = "storage"
+      vm_id         = 203
+      cpu_cores     = 2
+      memory_mb     = 1024
+      memory_min    = 512
+      disk_gb       = 10
+      data_disk_gb  = 40
+      lan_cidr      = "192.168.1.203/24"
+      internal_cidr = "10.0.10.10/24"
     }
   }
 }
@@ -58,7 +94,7 @@ resource "proxmox_download_file" "debian-13-genericcloud_image" {
 }
 
 resource "proxmox_virtual_environment_file" "cloud_config" {
-  for_each = local.nodes
+  for_each = local.vms
 
   content_type = "snippets"
   datastore_id = local.datastore_images
@@ -90,13 +126,14 @@ resource "proxmox_virtual_environment_file" "cloud_config" {
 }
 
 resource "proxmox_virtual_environment_vm" "debian_vms" {
-  for_each = local.nodes
+  for_each = local.vms
 
   vm_id     = each.value.vm_id
   name      = each.key
   node_name = local.node_name
 
   stop_on_destroy = true
+  protection      = each.value.role == "storage"
 
   operating_system {
     type = "l26"
@@ -122,6 +159,19 @@ resource "proxmox_virtual_environment_vm" "debian_vms" {
     iothread     = true
     discard      = "on"
     size         = each.value.disk_gb
+  }
+
+  dynamic "disk" {
+    for_each = each.value.data_disk_gb > 0 ? [each.value.data_disk_gb] : []
+
+    content {
+      datastore_id = local.datastore_disks
+      interface    = "virtio1"
+      file_format  = "raw"
+      iothread     = true
+      discard      = "on"
+      size         = disk.value
+    }
   }
 
   initialization {
