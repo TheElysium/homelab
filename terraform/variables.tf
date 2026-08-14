@@ -6,4 +6,5 @@ variable "proxmox_endpoint" {
 variable "proxmox_api_token" {
   type        = string
   description = "Proxmox API Token"
+  sensitive   = true
 }
