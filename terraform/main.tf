@@ -89,18 +89,62 @@ resource "proxmox_virtual_environment_file" "cloud_config" {
   }
 }
 
-# resource "proxmox_virtual_environment_vm" "k8s-master" {
-#   initialization {
-#     ip_config {
-#       ipv4 {
-#         address = local.nodes.k8s-master.lan_cidr
-#         gateway = local.lan_gateway
-#       }
-#     }
+resource "proxmox_virtual_environment_vm" "debian_vms" {
+  for_each = local.nodes
 
-#     user_account {
-#       username = "debian"
-#       keys     = [trimspace(file(local.ssh_public_key_path))]
-#     }
-#   }
-# }
+  vm_id     = each.value.vm_id
+  name      = each.key
+  node_name = local.node_name
+
+  stop_on_destroy = true
+
+  operating_system {
+    type = "l26"
+  }
+  agent {
+    enabled = true
+  }
+
+  cpu {
+    cores = each.value.cpu_cores
+    type  = "host"
+  }
+
+  memory {
+    dedicated = each.value.memory_mb
+    floating  = each.value.memory_min
+  }
+
+  disk {
+    datastore_id = local.datastore_disks
+    import_from  = proxmox_download_file.debian-13-genericcloud_image.id
+    interface    = "virtio0"
+    iothread     = true
+    discard      = "on"
+    size         = each.value.disk_gb
+  }
+
+  initialization {
+    datastore_id = local.datastore_disks
+    ip_config {
+      ipv4 {
+        address = each.value.lan_cidr
+        gateway = local.lan_gateway
+      }
+    }
+    ip_config {
+      ipv4 {
+        address = each.value.internal_cidr
+      }
+    }
+
+    user_data_file_id = proxmox_virtual_environment_file.cloud_config[each.key].id
+  }
+
+  network_device {
+    bridge = local.lan_bridge
+  }
+  network_device {
+    bridge = local.internal_bridge
+  }
+}
