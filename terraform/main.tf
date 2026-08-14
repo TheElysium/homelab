@@ -22,7 +22,7 @@ output "data_proxmox_version" {
 locals {
   node_name = "pve"
 
-  datastore_images = "local"     # image cloud + snippets cloud-init
+  datastore_images = "local"     # cloud image + cloud-init snippets
   datastore_disks  = "local-lvm" # VM disks (LVM-thin)
 
   image_url  = "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
