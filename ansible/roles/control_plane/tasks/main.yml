@@ -38,3 +38,33 @@
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: "0600"
+
+- name: Read the admin kubeconfig
+  ansible.builtin.slurp:
+    src: /etc/kubernetes/admin.conf
+  register: control_plane_admin_conf_content
+
+- name: Create the kubeconfig directory on the control station
+  ansible.builtin.file:
+    path: "{{ control_plane_local_kubeconfig | dirname }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Install the kubeconfig on the control station
+  # admin.conf advertises the internal network, which the control station has no
+  # route to. ansible_host is in the certificate SANs, so TLS still verifies.
+  # Written by content rather than fetched: a fetched file would differ from the
+  # remote one after the rewrite, and report changed on every run.
+  ansible.builtin.copy:
+    content: >-
+      {{ control_plane_admin_conf_content.content | b64decode
+         | replace('https://' ~ kube_apiserver_endpoint ~ ':' ~ kube_apiserver_port,
+                   'https://' ~ ansible_host ~ ':' ~ kube_apiserver_port) }}
+    dest: "{{ control_plane_local_kubeconfig }}"
+    mode: "0600"
+    backup: true
+  delegate_to: localhost
+  become: false
+  no_log: true

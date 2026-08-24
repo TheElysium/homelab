@@ -244,6 +244,19 @@ file kubeadm writes *last* — `admin.conf` for the control plane, `kubelet.conf
 for a worker. Their presence means a previous run went all the way through
 rather than dying halfway.
 
+**Write the final content, do not fetch and patch it.** The control plane ends by
+installing `admin.conf` on the control station, with its `server:` address rewritten
+from the internal network — which the workstation has no route to — to the LAN
+address, which is in the certificate SANs. The file is read with `slurp` and written
+with `copy`, rather than `fetch`ed and then edited: a fetched file would differ from
+the remote one the moment it is patched, and `fetch` would re-download it on every
+run.
+
+That copy lands on `~/.kube/config` and **overwrites it**. There is one cluster here,
+so the file has one owner; `backup: true` keeps the previous version rather than
+merging it, and the day a second context matters, the answer is a separate file and
+a `KUBECONFIG` with two paths.
+
 **Read the output of `kubectl apply`.** It is idempotent by design and can run
 every time; it is the reporting that needs help, since it always exits 0. The
 tasks set `changed_when` on the presence of `created` or `configured` in stdout —

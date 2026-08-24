@@ -5,3 +5,7 @@ control_plane_cert_sans:
   - "{{ internal_ip }}"
   - "{{ ansible_host }}"
   - "{{ inventory_hostname }}"
+
+# Outside the repository on purpose: it carries cluster-admin credentials, and
+# the Windows mount cannot express mode 0600.
+control_plane_local_kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/config"
