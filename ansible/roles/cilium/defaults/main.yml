@@ -1,0 +1,55 @@
+---
+cilium_version: 1.20.1
+
+# kubernetes.core.helm drives this binary; the collection does not ship it.
+cilium_helm_version: v3.21.4
+cilium_helm_binary: /usr/local/bin/helm
+
+# Without this plugin the module's own idempotency check misses changes when
+# chart_repo_url is set, and reports changed on every run.
+cilium_helm_diff_version: v3.15.11
+
+cilium_namespace: kube-system
+
+cilium_values:
+  # Required by l2announcements, and the reason kube-proxy is skipped at
+  # kubeadm init. See docs/decisions.
+  kubeProxyReplacement: true
+  # Without kube-proxy the agents cannot reach the API server through a
+  # ClusterIP, so they need its real address.
+  k8sServiceHost: "{{ kube_apiserver_endpoint }}"
+  k8sServicePort: "{{ kube_apiserver_port }}"
+  ipam:
+    mode: kubernetes
+  routingMode: tunnel
+  tunnelProtocol: vxlan
+  # The tunnel follows the kubelet node-ip, which is the internal address; eth0
+  # is here only so L2 announcements can go out on the LAN.
+  devices: "{{ internal_iface }},{{ lan_iface }}"
+  l2announcements:
+    enabled: true
+  # Leases are renewed through the API server; the defaults throttle hard
+  # enough to drop announcements.
+  k8sClientRateLimit:
+    qps: 10
+    burst: 20
+  # Two replicas with the default anti-affinity leave one Pending: this play
+  # runs before any worker has joined.
+  operator:
+    replicas: 1
+  hubble:
+    enabled: false
+
+cilium_lb_pool_start: 192.168.1.210
+cilium_lb_pool_stop: 192.168.1.220
+
+# Announcing on the internal interface would advertise the addresses on a
+# network no client can reach.
+cilium_l2_interfaces:
+  - "^{{ lan_iface }}$"
+
+cilium_addon_dir: /etc/kubernetes/addons
+cilium_lb_manifest: "{{ cilium_addon_dir }}/cilium-lb.yaml"
+
+cilium_rollout_timeout: 300s
+cilium_node_ready_timeout: 300s

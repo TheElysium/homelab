@@ -1,0 +1,52 @@
+---
+- name: Install the NFS server packages
+  ansible.builtin.apt:
+    name: "{{ nfs_server_packages }}"
+    state: present
+
+- name: Create the filesystem on the data disk
+  # Never add force: the module refuses a device that already carries a
+  # filesystem, and a failure here means the device is not the one you think.
+  community.general.filesystem:
+    dev: "{{ nfs_data_device }}"
+    fstype: "{{ nfs_data_fstype }}"
+
+- name: Read the filesystem UUID
+  ansible.builtin.command:
+    cmd: blkid --match-tag UUID --output value {{ nfs_data_device }}
+  changed_when: false
+  register: nfs_server_data_uuid
+
+- name: Mount the data disk
+  # By UUID, not /dev/vdb: the fstab entry survives virtio re-enumeration.
+  ansible.posix.mount:
+    path: "{{ nfs_data_mount }}"
+    src: UUID={{ nfs_server_data_uuid.stdout | trim }}
+    fstype: "{{ nfs_data_fstype }}"
+    opts: "{{ nfs_server_data_mount_opts }}"
+    passno: "2"
+    state: mounted
+
+- name: Create the export directory
+  # A subdirectory of the mount point, so lost+found stays out of the export.
+  ansible.builtin.file:
+    path: "{{ nfs_export_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Declare the export
+  ansible.builtin.template:
+    src: exports.j2
+    dest: /etc/exports
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload the NFS exports
+
+- name: Start the NFS server
+  ansible.builtin.systemd_service:
+    name: nfs-server
+    state: started
+    enabled: true

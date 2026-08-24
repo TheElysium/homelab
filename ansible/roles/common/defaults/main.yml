@@ -1,0 +1,9 @@
+---
+# Refresh the apt index only if it is older than an hour. Without this the role
+# hits the Debian mirrors on every single run.
+common_apt_cache_valid_time: 3600
+
+# Suffix used for the /etc/hosts entries this role writes. Deliberately not the
+# bare hostname: cloud-init already maps that to 127.0.1.1 near the top of the
+# file, and the first match wins.
+common_internal_domain: internal

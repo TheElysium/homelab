@@ -1,0 +1,103 @@
+---
+# Read-only. Every assertion here must hold both before and after the roles run;
+# anything only true afterwards belongs to the role, not here.
+#
+#   ansible-playbook checks.yml
+
+- name: Verify inventory data against the running machines
+  hosts: all
+  gather_facts: true
+  become: false
+
+  tasks:
+    - name: The LAN address Ansible connected to is the one declared in the inventory
+      ansible.builtin.assert:
+        that: ansible_host == ansible_facts['default_ipv4']['address']
+        fail_msg: >-
+          {{ inventory_hostname }} answers on {{ ansible_host }} but its default
+          route uses {{ ansible_facts['default_ipv4']['address'] }}.
+        success_msg: "{{ ansible_host }}"
+
+    - name: The internal interface exists and carries the declared address
+      # internal_ip is duplicated between terraform/main.tf and inventory.yml;
+      # this is what keeps the two in step.
+      ansible.builtin.assert:
+        that:
+          - internal_iface in ansible_facts
+          - ansible_facts[internal_iface]['ipv4'] is defined
+          - ansible_facts[internal_iface]['ipv4']['address'] == internal_ip
+        fail_msg: >-
+          {{ inventory_hostname }} declares {{ internal_ip }} on
+          {{ internal_iface }} but reports
+          {{ ansible_facts[internal_iface]['ipv4']['address'] | default('no address') }}.
+        success_msg: "{{ internal_iface }} = {{ internal_ip }}"
+
+    - name: Reach the NFS server over the internal network
+      # The default route goes through eth0, so this proves eth1 itself works.
+      ansible.builtin.command:
+        cmd: ping -c 2 -W 2 -I {{ internal_iface }} {{ nfs_server_ip }}
+      changed_when: false
+
+    - name: Reach the API server endpoint over the internal network
+      ansible.builtin.command:
+        cmd: ping -c 2 -W 2 -I {{ internal_iface }} {{ kube_apiserver_endpoint }}
+      changed_when: false
+      when: inventory_hostname in groups['k8s_cluster']
+
+    - name: Read the current time on the host
+      # Not ansible_facts.date_time: captured at fact gathering, already stale.
+      ansible.builtin.command:
+        cmd: date +%s
+      changed_when: false
+      register: remote_epoch
+
+    - name: The clock is within five seconds of the control node
+      ansible.builtin.assert:
+        that: (remote_epoch.stdout | int - lookup('pipe', 'date +%s') | int) | abs < 5
+        fail_msg: >-
+          {{ inventory_hostname }} is
+          {{ (remote_epoch.stdout | int - lookup('pipe', 'date +%s') | int) | abs }}s
+          away from the control node.
+
+    - name: Passwordless sudo works
+      ansible.builtin.command:
+        cmd: id -un
+      become: true
+      changed_when: false
+      register: sudo_check
+      failed_when: sudo_check.stdout != 'root'
+
+- name: Verify the storage node
+  hosts: storage
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: The data device is present
+      ansible.builtin.stat:
+        path: "{{ nfs_data_device }}"
+      register: data_device
+
+    - name: Report a missing data device
+      ansible.builtin.assert:
+        that: data_device.stat.exists and data_device.stat.isblk
+        fail_msg: >-
+          {{ nfs_data_device }} is not a block device. Check data_disk_gb in
+          terraform/main.tf.
+
+    - name: Read the filesystem currently on the data device
+      ansible.builtin.command:
+        cmd: lsblk --nodeps --noheadings --output FSTYPE {{ nfs_data_device }}
+      changed_when: false
+      register: data_device_fstype
+
+    - name: The data device is either blank or already carries the expected filesystem
+      # Never answer a failure here with force:true on the filesystem module.
+      ansible.builtin.assert:
+        that: data_device_fstype.stdout | trim in ['', nfs_data_fstype]
+        fail_msg: >-
+          {{ nfs_data_device }} carries a {{ data_device_fstype.stdout | trim }}
+          filesystem, expected {{ nfs_data_fstype }} or nothing.
+        success_msg: >-
+          {{ nfs_data_device }}:
+          {{ data_device_fstype.stdout | trim | default('blank', true) }}

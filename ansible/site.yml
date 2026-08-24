@@ -1,0 +1,69 @@
+---
+# Builds the whole cluster. Idempotent: a second run reports changed=0.
+#
+#   ansible-playbook site.yml
+#
+# Tags replay one layer on a live cluster. They are not an installation path,
+# and --tags cilium is not a CNI migration: changing the pod network on a running
+# cluster needs a separate CIDR and a staged rollout, not a replay.
+# See docs/provisioning.md.
+
+- name: Baseline every machine
+  hosts: all
+  become: true
+  tags: [common]
+  roles:
+    - common
+
+- name: Serve the NFS export
+  hosts: storage
+  become: true
+  any_errors_fatal: true
+  tags: [storage]
+  roles:
+    - nfs_server
+
+- name: Prepare the Kubernetes nodes
+  hosts: k8s_cluster
+  become: true
+  any_errors_fatal: true
+  tags: [kube_prereq]
+  roles:
+    - kube_prereq
+
+- name: Bootstrap the control plane
+  hosts: control_plane
+  become: true
+  any_errors_fatal: true
+  tags: [control_plane]
+  roles:
+    - control_plane
+
+- name: Install the pod network
+  hosts: control_plane
+  become: true
+  any_errors_fatal: true
+  # Before the workers: without a CNI no node reaches Ready, and a kubeadm join
+  # against a NotReady control plane is a coin toss.
+  tags: [cilium]
+  roles:
+    - cilium
+
+- name: Join the workers
+  hosts: worker
+  become: true
+  # Not serial: the token task is run_once over the whole play and reads every
+  # host's facts to decide whether a token is needed.
+  tags: [worker]
+  roles:
+    - worker
+
+- name: Give the cluster a default StorageClass
+  hosts: control_plane
+  become: true
+  # Runs on the master, but must come after the workers: until one has joined,
+  # the only node carries the control-plane NoSchedule taint and the
+  # provisioner Deployment has nowhere to run.
+  tags: [storage, nfs_provisioner]
+  roles:
+    - nfs_provisioner

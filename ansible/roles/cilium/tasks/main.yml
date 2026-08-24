@@ -1,0 +1,98 @@
+---
+- name: Install the helm binary
+  ansible.builtin.unarchive:
+    src: https://get.helm.sh/helm-{{ cilium_helm_version }}-linux-amd64.tar.gz
+    dest: /usr/local/bin
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+      - linux-amd64/helm
+    creates: "{{ cilium_helm_binary }}"
+
+- name: Install git
+  # helm plugin install resolves any URL to a git clone.
+  ansible.builtin.apt:
+    name: git
+    state: present
+
+- name: List the installed helm plugins
+  ansible.builtin.command:
+    cmd: "{{ cilium_helm_binary }} plugin list"
+  register: cilium_helm_plugins
+  changed_when: false
+
+- name: Install the helm diff plugin
+  ansible.builtin.command:
+    cmd: >-
+      {{ cilium_helm_binary }} plugin install https://github.com/databus23/helm-diff
+      --version {{ cilium_helm_diff_version }}
+  when: "'diff' not in cilium_helm_plugins.stdout"
+  changed_when: true
+
+- name: Deploy Cilium
+  kubernetes.core.helm:
+    name: cilium
+    chart_ref: cilium
+    chart_repo_url: https://helm.cilium.io/
+    chart_version: "{{ cilium_version }}"
+    release_namespace: "{{ cilium_namespace }}"
+    values: "{{ cilium_values }}"
+    kubeconfig: /etc/kubernetes/admin.conf
+    binary_path: "{{ cilium_helm_binary }}"
+    wait: true
+    wait_timeout: "{{ cilium_rollout_timeout }}"
+
+- name: Wait for the load-balancer CRDs to be established
+  # The operator registers them once it is running; the chart does not carry
+  # them. Retried because the first call can land before they exist at all,
+  # and kubectl wait errors on a missing resource instead of waiting.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=established --timeout=60s
+      crd/ciliumloadbalancerippools.cilium.io
+      crd/ciliuml2announcementpolicies.cilium.io
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_crd_wait
+  until: cilium_crd_wait is succeeded
+  retries: 12
+  delay: 5
+  changed_when: false
+
+- name: Create the addon manifest directory
+  ansible.builtin.file:
+    path: "{{ cilium_addon_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the load-balancer manifest
+  ansible.builtin.template:
+    src: cilium-lb.yaml.j2
+    dest: "{{ cilium_lb_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the load-balancer manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ cilium_lb_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_lb_apply
+  changed_when: >-
+    'created' in cilium_lb_apply.stdout
+    or 'configured' in cilium_lb_apply.stdout
+
+- name: Wait for the node to become Ready
+  # Nothing before the CNI can make it Ready, which is why this lives here and
+  # not at the end of the control_plane role.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=Ready node/{{ inventory_hostname }}
+      --timeout={{ cilium_node_ready_timeout }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false

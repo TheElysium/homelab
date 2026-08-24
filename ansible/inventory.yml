@@ -1,0 +1,33 @@
+---
+all:
+  vars:
+    ansible_user: debian
+    ansible_ssh_private_key_file: ~/.ssh/homelab
+
+  children:
+    control_plane:
+      hosts:
+        k8s-master:
+          ansible_host: 192.168.1.200
+          internal_ip: 10.0.10.11
+
+    worker:
+      hosts:
+        k8s-worker-1:
+          ansible_host: 192.168.1.201
+          internal_ip: 10.0.10.12
+        k8s-worker-2:
+          ansible_host: 192.168.1.202
+          internal_ip: 10.0.10.13
+
+    storage:
+      hosts:
+        nfs-server:
+          ansible_host: 192.168.1.203
+          internal_ip: 10.0.10.10
+
+    # Convenience group for anything that runs kubelet.
+    k8s_cluster:
+      children:
+        control_plane:
+        worker:

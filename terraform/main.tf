@@ -37,7 +37,7 @@ locals {
 
   vms = {
     "k8s-master" = {
-      role          = "control-plane"
+      role          = "control_plane"
       vm_id         = 200
       cpu_cores     = 2 # kubeadm minimum
       memory_mb     = 3072
@@ -134,6 +134,8 @@ resource "proxmox_virtual_environment_vm" "debian_vms" {
 
   stop_on_destroy = true
   protection      = each.value.role == "storage"
+
+  tags = [each.value.role]
 
   operating_system {
     type = "l26"

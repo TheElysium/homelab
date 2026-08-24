@@ -1,0 +1,71 @@
+---
+- name: Look for an existing cluster membership
+  # kubeadm writes kubelet.conf at the end of a successful join.
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: worker_kubelet_conf
+
+- name: Create a join token on the control plane
+  # The condition is about the play, not this host: run_once evaluates it on the
+  # first host only, so testing this host alone would leave a second worker
+  # without a token.
+  ansible.builtin.command:
+    cmd: kubeadm token create --print-join-command
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  run_once: true
+  when: >-
+    ansible_play_hosts
+    | map('extract', hostvars, ['worker_kubelet_conf', 'stat', 'exists'])
+    | reject | list | length > 0
+  register: worker_join_command
+  changed_when: true
+  no_log: true
+
+- name: Write the kubeadm join configuration
+  # A file rather than the printed command line: the join also has to set
+  # node-ip, which kubeadm join takes only through --config.
+  ansible.builtin.template:
+    src: kubeadm-join.yaml.j2
+    dest: "{{ worker_join_config }}"
+    owner: root
+    group: root
+    mode: "0600"
+  vars:
+    join_token: "{{ worker_join_command.stdout | regex_search('--token\\s+(\\S+)', '\\1') | first }}"
+    join_ca_hash: "{{ worker_join_command.stdout | regex_search('--discovery-token-ca-cert-hash\\s+(\\S+)', '\\1') | first }}"
+  when: not worker_kubelet_conf.stat.exists
+  no_log: true
+
+- name: Join the cluster
+  ansible.builtin.command:
+    cmd: kubeadm join --config {{ worker_join_config }}
+  when: not worker_kubelet_conf.stat.exists
+  changed_when: true
+
+- name: Remove the join configuration
+  # Unconditional, so a file left by a failed run is cleaned up on the next one.
+  ansible.builtin.file:
+    path: "{{ worker_join_config }}"
+    state: absent
+
+- name: Label the node as a worker
+  # kubeadm leaves workers with no role, so the ROLES column comes up empty.
+  ansible.builtin.command:
+    cmd: kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker= --overwrite
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: worker_label
+  changed_when: "'not labeled' not in worker_label.stdout"
+
+- name: Wait for the node to become Ready
+  # Asked from the control plane: a worker has no kubeconfig and deliberately
+  # gets none.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=Ready node/{{ inventory_hostname }}
+      --timeout={{ worker_ready_timeout }}
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false

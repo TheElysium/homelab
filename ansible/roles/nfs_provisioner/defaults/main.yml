@@ -1,0 +1,26 @@
+---
+nfs_provisioner_namespace: storage
+
+nfs_provisioner_image: registry.k8s.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2
+
+# Written into every PersistentVolume it creates: renaming it orphans them all.
+nfs_provisioner_name: k8s-sigs.io/nfs-subdir-external-provisioner
+
+nfs_provisioner_storage_class: nfs-client
+nfs_provisioner_default_class: true
+
+# On true, deleting a claim renames its directory to archived-<name>.
+nfs_provisioner_archive_on_delete: true
+
+# Not /etc/kubernetes/manifests, which the kubelet watches for static pods.
+nfs_provisioner_addon_dir: /etc/kubernetes/addons
+nfs_provisioner_manifest: "{{ nfs_provisioner_addon_dir }}/nfs-provisioner.yaml"
+
+nfs_provisioner_resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+nfs_provisioner_rollout_timeout: 180s

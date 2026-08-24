@@ -1,0 +1,38 @@
+{{ ansible_managed | comment }}
+#
+# Consumed by kubeadm init. Editing it afterwards changes nothing on a running
+# cluster; it is kept as the record of what this cluster was built from.
+#
+# No --- above this line: kubeadm splits the file on that separator and rejects
+# a document without a kind.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: {{ internal_ip }}
+  bindPort: {{ kube_apiserver_port }}
+# Cilium replaces kube-proxy. Letting kubeadm install it anyway leaves a
+# second service implementation and its iptables rules behind.
+skipPhases:
+  - addon/kube-proxy
+nodeRegistration:
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    # Without this the kubelet registers the default-route address, and every
+    # component talking to it leaves the internal network.
+    - name: node-ip
+      value: {{ internal_ip }}
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v{{ kubernetes_package_version | split('-') | first }}
+# Set even for a single node: adding a second control plane later requires it
+# to have been there from the start.
+controlPlaneEndpoint: {{ kube_apiserver_endpoint }}:{{ kube_apiserver_port }}
+networking:
+  podSubnet: {{ pod_network_cidr }}
+  serviceSubnet: {{ service_cidr }}
+apiServer:
+  certSANs:
+{% for san in control_plane_cert_sans %}
+    - {{ san }}
+{% endfor %}

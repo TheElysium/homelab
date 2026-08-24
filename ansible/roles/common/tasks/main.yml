@@ -1,0 +1,40 @@
+---
+- name: Set the system timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Install the base packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ common_apt_cache_valid_time }}"
+
+- name: Install the NTP daemon
+  ansible.builtin.apt:
+    name: "{{ ntp_package }}"
+    state: present
+  notify: Restart systemd-timedated
+
+- name: Start the NTP daemon
+  # masked: false — a previously uninstalled implementation may have left the
+  # unit pointing at /dev/null, and reinstalling does not undo that.
+  ansible.builtin.systemd_service:
+    name: "{{ ntp_package }}"
+    state: started
+    enabled: true
+    masked: false
+
+- name: Map the internal addresses in /etc/hosts
+  # From the inventory, not from facts, so this renders correctly even when the
+  # play targets a single group.
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE MANAGED: homelab internal network"
+    block: |
+      {% for host in groups['all'] | sort %}
+      {{ hostvars[host]['internal_ip'] }} {{ host }}.{{ common_internal_domain }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0644"

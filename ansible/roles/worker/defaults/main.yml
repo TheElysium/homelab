@@ -1,0 +1,5 @@
+---
+# Carries a bootstrap token: mode 0600, removed as soon as the join is done.
+worker_join_config: /etc/kubernetes/kubeadm-join.yaml
+
+worker_ready_timeout: 300s

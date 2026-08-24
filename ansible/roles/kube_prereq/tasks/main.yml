@@ -1,0 +1,101 @@
+---
+- name: Check whether any swap is active
+  ansible.builtin.assert:
+    that: ansible_facts['swaptotal_mb'] | int == 0
+    fail_msg: >-
+      {{ inventory_hostname }} has {{ ansible_facts['swaptotal_mb'] }} MB of
+      swap. kubelet refuses to start with swap enabled.
+    success_msg: no swap
+
+- name: Comment out any swap entry in fstab
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: ^([^#].*\sswap\s.*)$
+    replace: '# \1'
+
+- name: Load the kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+    persistent: present
+  loop: "{{ kube_prereq_modules }}"
+
+- name: Apply the sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+    sysctl_set: true
+    reload: true
+  loop: "{{ kube_prereq_sysctl | dict2items }}"
+
+- name: Install the container runtime
+  ansible.builtin.apt:
+    name: "{{ kube_prereq_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add the Kubernetes repository key
+  # Armored .asc: apt reads that format directly since Debian 12, so no
+  # gpg --dearmor step and no gnupg dependency.
+  ansible.builtin.get_url:
+    url: https://pkgs.k8s.io/core:/stable:/{{ kubernetes_version }}/deb/Release.key
+    dest: /etc/apt/keyrings/kubernetes.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add the Kubernetes repository
+  ansible.builtin.deb822_repository:
+    name: kubernetes
+    types: deb
+    uris: https://pkgs.k8s.io/core:/stable:/{{ kubernetes_version }}/deb/
+    suites: /
+    signed_by: /etc/apt/keyrings/kubernetes.asc
+    enabled: true
+
+- name: Install the Kubernetes packages
+  ansible.builtin.apt:
+    name: "{{ kube_prereq_kubernetes_packages | map('regex_replace', '$', '=' ~ kubernetes_package_version) | list }}"
+    state: present
+    update_cache: true
+    allow_change_held_packages: true
+
+- name: Hold the Kubernetes packages
+  # unattended-upgrades is active on these images and would otherwise move a
+  # node to another minor version, at night, silently.
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ kube_prereq_kubernetes_packages }}"
+
+- name: Ask kubeadm which pause image it expects
+  # Hardcoding the tag is how you end up with two pause images on the node.
+  ansible.builtin.command:
+    cmd: kubeadm config images list --kubernetes-version {{ kubernetes_package_version | split('-') | first }}
+  changed_when: false
+  register: kube_prereq_kubeadm_images
+
+- name: Configure containerd
+  ansible.builtin.template:
+    src: containerd.toml.j2
+    dest: /etc/containerd/config.toml
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    pause_image: "{{ kube_prereq_kubeadm_images.stdout_lines | select('search', '/pause:') | first }}"
+  notify: Restart containerd
+
+- name: Start the container runtime
+  ansible.builtin.systemd_service:
+    name: containerd
+    state: started
+    enabled: true
+
+- name: Enable kubelet without starting it
+  # It crash-loops until kubeadm hands it a configuration.
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true

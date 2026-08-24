@@ -1,0 +1,7 @@
+---
+# Extra names on the API server certificate. ansible_host matters: without it a
+# kubectl pointed at the LAN address is rejected, and the fix is a reissue.
+control_plane_cert_sans:
+  - "{{ internal_ip }}"
+  - "{{ ansible_host }}"
+  - "{{ inventory_hostname }}"

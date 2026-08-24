@@ -1,0 +1,39 @@
+---
+- name: Create the addon manifest directory
+  ansible.builtin.file:
+    path: "{{ nfs_provisioner_addon_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the provisioner manifest
+  ansible.builtin.template:
+    src: nfs-provisioner.yaml.j2
+    dest: "{{ nfs_provisioner_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the provisioner manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ nfs_provisioner_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: nfs_provisioner_apply
+  changed_when: >-
+    'created' in nfs_provisioner_apply.stdout
+    or 'configured' in nfs_provisioner_apply.stdout
+
+- name: Wait for the provisioner to be running
+  # Where a wrong server address or a missing export line surfaces: the pod
+  # stays in ContainerCreating.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl -n {{ nfs_provisioner_namespace }} rollout status
+      deployment/nfs-client-provisioner
+      --timeout={{ nfs_provisioner_rollout_timeout }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false

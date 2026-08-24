@@ -1,0 +1,19 @@
+{{ ansible_managed | comment }}
+version = 2
+
+[plugins."io.containerd.grpc.v1.cri"]
+  sandbox_image = "{{ pause_image }}"
+
+[plugins."io.containerd.grpc.v1.cri".cni]
+  # Not defaults. Debian patches bin_dir to /usr/lib/cni while CNI plugins
+  # install into /opt/cni/bin; left implicit, no pod sandbox is ever created.
+  bin_dir = "/opt/cni/bin"
+  conf_dir = "/etc/cni/net.d"
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+  # Must match the kubelet's cgroup driver, or the node turns unstable under
+  # load with no error at startup.
+  SystemdCgroup = true

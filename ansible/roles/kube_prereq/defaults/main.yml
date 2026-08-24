@@ -1,0 +1,19 @@
+---
+kube_prereq_modules:
+  - overlay
+  - br_netfilter
+
+# br_netfilter must be loaded first: the two bridge keys do not exist until it is.
+kube_prereq_sysctl:
+  net.ipv4.ip_forward: "1"
+  net.bridge.bridge-nf-call-iptables: "1"
+  net.bridge.bridge-nf-call-ip6tables: "1"
+
+kube_prereq_packages:
+  - containerd
+  - nfs-common # the node's kernel performs the mount, not the pod
+
+kube_prereq_kubernetes_packages:
+  - kubelet
+  - kubeadm
+  - kubectl

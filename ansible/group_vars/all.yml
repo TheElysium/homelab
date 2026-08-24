@@ -1,0 +1,23 @@
+---
+timezone: Europe/Paris
+
+internal_network_cidr: 10.0.10.0/24
+internal_iface: eth1
+# Cilium announces the LoadBalancer addresses here.
+lan_iface: eth0
+
+# internal_ip is set per host in inventory.yml.
+
+# Shared by the storage group, which exports it, and the nodes, which mount it.
+nfs_server_ip: "{{ hostvars[groups['storage'][0]].internal_ip }}"
+nfs_export_path: /srv/nfs/kubernetes
+
+common_packages:
+  - python3-apt # backs the ansible apt module
+  - curl
+  - ca-certificates
+  - jq
+  - htop
+
+# Switching to chrony means changing this value only: both provide time-daemon.
+ntp_package: systemd-timesyncd

@@ -1,0 +1,4 @@
+---
+# No nofail: a missing data disk must stop the boot rather than let the export
+# silently serve the root disk.
+nfs_server_data_mount_opts: defaults,noatime

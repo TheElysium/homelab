@@ -1,0 +1,7 @@
+---
+- name: Restart systemd-timedated
+  # It reads ntp-units.d/ once at startup: after an implementation change,
+  # timedatectl reports NTP=no until it is restarted.
+  ansible.builtin.systemd_service:
+    name: systemd-timedated
+    state: restarted

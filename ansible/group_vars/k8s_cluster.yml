@@ -1,0 +1,10 @@
+---
+kubernetes_version: v1.35
+
+kubernetes_package_version: 1.35.7-1.1
+
+pod_network_cidr: 10.244.0.0/16
+service_cidr: 10.96.0.0/12
+
+kube_apiserver_port: 6443
+kube_apiserver_endpoint: "{{ hostvars[groups['control_plane'][0]].internal_ip }}"

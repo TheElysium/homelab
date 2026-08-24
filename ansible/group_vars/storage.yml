@@ -1,0 +1,11 @@
+---
+nfs_data_device: /dev/vdb
+nfs_data_fstype: ext4
+nfs_data_mount: /srv/nfs
+
+nfs_server_packages:
+  - nfs-kernel-server
+
+# no_root_squash: root on any host in internal_network_cidr is root on this
+# data. Only acceptable while that network stays isolated.
+nfs_export_options: rw,sync,no_subtree_check,no_root_squash

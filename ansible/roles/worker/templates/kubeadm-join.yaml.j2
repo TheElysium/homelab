@@ -1,0 +1,19 @@
+{{ ansible_managed | comment }}
+#
+# No --- above this line: kubeadm splits the file on that separator and rejects
+# a document without a kind.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: {{ kube_apiserver_endpoint }}:{{ kube_apiserver_port }}
+    token: {{ join_token }}
+    caCertHashes:
+      - {{ join_ca_hash }}
+nodeRegistration:
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    # Without this the kubelet registers the default-route address, which is the
+    # LAN one.
+    - name: node-ip
+      value: {{ internal_ip }}

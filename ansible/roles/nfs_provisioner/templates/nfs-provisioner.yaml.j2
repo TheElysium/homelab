@@ -1,0 +1,133 @@
+{{ ansible_managed | comment }}
+#
+# Upstream deploy/ manifests merged into one file. Keep this order: kubectl
+# applies documents as it reads them, and the ServiceAccount must exist before
+# the bindings that name it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ nfs_provisioner_namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nfs-client-provisioner
+  namespace: {{ nfs_provisioner_namespace }}
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nfs-client-provisioner-runner
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: run-nfs-client-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: nfs-client-provisioner
+    namespace: {{ nfs_provisioner_namespace }}
+roleRef:
+  kind: ClusterRole
+  name: nfs-client-provisioner-runner
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-nfs-client-provisioner
+  namespace: {{ nfs_provisioner_namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-nfs-client-provisioner
+  namespace: {{ nfs_provisioner_namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: nfs-client-provisioner
+    namespace: {{ nfs_provisioner_namespace }}
+roleRef:
+  kind: Role
+  name: leader-locking-nfs-client-provisioner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-client-provisioner
+  namespace: {{ nfs_provisioner_namespace }}
+  labels:
+    app: nfs-client-provisioner
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: two replicas would answer the same claims.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nfs-client-provisioner
+  template:
+    metadata:
+      labels:
+        app: nfs-client-provisioner
+    spec:
+      serviceAccountName: nfs-client-provisioner
+      containers:
+        - name: nfs-client-provisioner
+          image: {{ nfs_provisioner_image }}
+          volumeMounts:
+            - name: nfs-client-root
+              mountPath: /persistentvolumes
+          env:
+            # Must match the provisioner field of the StorageClass below.
+            - name: PROVISIONER_NAME
+              value: {{ nfs_provisioner_name }}
+            - name: NFS_SERVER
+              value: {{ nfs_server_ip }}
+            - name: NFS_PATH
+              value: {{ nfs_export_path }}
+          resources:
+{{ nfs_provisioner_resources | to_nice_yaml(indent=2) | indent(12, true) }}
+      volumes:
+        - name: nfs-client-root
+          # In-tree plugin: the mount is done by the node's kernel, which is why
+          # every node carries nfs-common.
+          nfs:
+            server: {{ nfs_server_ip }}
+            path: {{ nfs_export_path }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ nfs_provisioner_storage_class }}
+{% if nfs_provisioner_default_class %}
+  annotations:
+    # Exactly one class in the cluster may carry this.
+    storageclass.kubernetes.io/is-default-class: "true"
+{% endif %}
+provisioner: {{ nfs_provisioner_name }}
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  archiveOnDelete: "{{ nfs_provisioner_archive_on_delete | string | lower }}"
