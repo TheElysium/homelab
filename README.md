@@ -80,9 +80,6 @@ homelab/
                             control_plane, cilium, worker, nfs_provisioner
 ```
 
-Terraform uses local state. State is not committed because it contains the Proxmox API
-token in clear text.
-
 ## Prerequisites
 
 Run Ansible from a Linux control machine.
