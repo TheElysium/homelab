@@ -43,10 +43,9 @@ record of what is installed out of the repository and into the cluster.
 `kubernetes.core.helm`, with the `helm` binary installed by the role that needs
 it and `kubernetes.core` pinned in `requirements.yml`.
 
-The second option was the better fit for Cilium taken alone, and the worse fit
-once the question is what happens to the next twenty charts. Rendering every
-future application by hand to preserve a pattern would be preserving the pattern
-at the expense of the work it exists to make easy.
+The second option fits Cilium but does not scale to future applications. Rendering
+each chart by hand would add maintenance work and prevent Helm from managing the
+release.
 
 ## Consequences
 
@@ -59,11 +58,11 @@ repository. `git show` no longer answers what is deployed; `helm get values`
 does. Someone reading the repository sees the inputs and must render the chart to
 see the output.
 
-Two idioms now coexist. `nfs_provisioner` keeps its hand-written manifest,
+Two deployment methods now coexist. `nfs_provisioner` keeps its hand-written manifest,
 because it is a manifest and not a chart, and converting it would be churn.
 Anyone adding a component has to decide which pattern applies — the rule being
 that charts go through Helm and everything else through `kubectl apply`.
 
 The cluster gains two dependencies that must be installed before a playbook run:
 the `helm` binary on the control-plane node and the `kubernetes.core` collection
-on the workstation.
+on the Ansible control machine.

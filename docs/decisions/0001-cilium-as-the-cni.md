@@ -9,13 +9,11 @@ accepted
 kubeadm builds a cluster with no pod network. Until a CNI is installed every node
 stays `NotReady`, so the choice cannot be deferred.
 
-The cluster is a household one, on a single hypervisor, and the stated purpose is
-to learn by hosting real services. Two requirements follow from that purpose
-rather than from scale:
+The cluster runs on a single hypervisor and is intended to host real services. Two
+requirements are important:
 
 - Services must be reachable from the LAN at a stable address. `NodePort` works
-  but forces every consumer to know a node address and a port above 30000, which
-  makes the cluster feel like three machines rather than one.
+  but forces every consumer to know a node address and a port above 30000.
 - `NetworkPolicy` must actually be enforced. Writing policies that the API server
   accepts and nothing applies teaches the wrong lesson.
 
@@ -41,37 +39,36 @@ iptables data path duplicates what kube-proxy already does.
 
 **Cilium.** Provides the pod network, enforces `NetworkPolicy`, and allocates
 LAN addresses through LB-IPAM with L2 announcements — one component instead of
-two. Carries an eBPF data path, which is the part with the least prior art in
-this homelab.
+two. It also uses an eBPF data path, which is the least familiar part of this
+setup.
 
 ## Decision
 
 Cilium 1.20.1, VXLAN tunnel mode over the internal interface, with LB-IPAM and L2
 announcements enabled and a pool of `192.168.1.210`–`.220` on the LAN.
 
-What decided it was the component count rather than any single feature. Every
-additional moving part in a cluster with one control-plane node is a part that
-can fail alone, and the alternative that met both requirements with one project
-was Cilium.
+The deciding factor was component count. The cluster has one control-plane node, so
+each additional component adds another independent failure point. Cilium was the
+only considered option that met both requirements in one project.
 
 ## Consequences
 
 The cluster gets `LoadBalancer` addresses on the LAN and enforced network
 policies without a second project to install, version and upgrade. Hubble is
-available later at the cost of a Helm value, which makes observability cheap to
-add.
+available later through Helm values.
 
 The data path is eBPF. There are no iptables rules to read when something is
 wrong: diagnosis goes through `cilium status`, `cilium monitor` and Hubble, which
-must be learnt before they are needed. This is the real cost of the decision.
+must be learned before they are needed. This is the main operational cost of the
+decision.
 
 Cilium publishes a support matrix against Kubernetes versions, so the two are now
 upgraded together rather than independently.
 
 L2 announcements are not load balancing. One node answers ARP for a given
 service address; if it goes down another takes over after the lease expires, but
-traffic is never spread. On a three-node cluster this is the right trade, and it
-would not be at a larger size.
+traffic is never spread. This is acceptable for a three-node cluster but would not
+scale in the same way to a larger deployment.
 
 The overlay is confined to a single L2 domain, which is true of this LAN and
 would not survive the cluster being split across networks.

@@ -1,13 +1,12 @@
 # Provisioning
 
-How four empty virtual machines become a Kubernetes cluster with persistent
-storage. [architecture.md](architecture.md) describes *what* the system is made
-of; this document describes *how* it gets built, and in which order.
+How four empty virtual machines become a Kubernetes cluster with persistent storage.
+[architecture.md](architecture.md) describes the system; this document describes the
+build process and its order.
 
-Two tools, with a clean seam between them. Terraform owns everything up to and
-including a booted machine reachable by SSH. Ansible owns everything inside the
-machines. Nothing crosses that line: Terraform never installs a package, Ansible
-never creates a VM.
+Terraform creates the VMs and makes them reachable by SSH. Ansible configures the
+machines and the cluster. Terraform does not install packages, and Ansible does not
+create VMs.
 
 ```mermaid
 flowchart LR
@@ -32,10 +31,9 @@ flowchart LR
     PVE --> IMG --> SNIP --> VM --> BOOT --> PLAYS --> OUT["3-node cluster<br/>+ default StorageClass"]
 ```
 
-The chain is re-entrant at every arrow. `terraform apply` on an existing set of
-VMs changes nothing; `ansible-playbook site.yml` on a running cluster reports
-`changed=0`. That property is the point of the whole exercise — it is what makes
-destroying the cluster a cheap decision.
+The process is idempotent. `terraform apply` on an existing set of VMs changes
+nothing, and `ansible-playbook site.yml` on a running cluster reports `changed=0`.
+This makes the Kubernetes nodes safe to rebuild.
 
 ## What is not automated
 
@@ -49,10 +47,9 @@ repository:
 | A `terraform` system account on the host, SSH key only | Proxmox has **no API** for uploading cloud-init snippets, so the provider writes them over SSH |
 | `local` datastore accepting the **Snippets** and **Import** content types | A checkbox in the web UI; without it both the snippet upload and the image download fail with storage errors that never mention it |
 
-Two keypairs are involved and they are deliberately distinct: `~/.ssh/pve-terraform`
-for the hypervisor account (PEM RSA — the provider accepts nothing else here and
-ignores `~/.ssh/config`), and `~/.ssh/homelab` injected into the guests by
-cloud-init. Separate uses, separate revocations.
+Use two separate keypairs: `~/.ssh/pve-terraform` for the hypervisor account
+(PEM-formatted RSA; the provider ignores `~/.ssh/config`) and `~/.ssh/homelab` for
+the guest VMs.
 
 The hypervisor's `terraform` account has **no passwordless sudo**, and that
 restriction is intentional. It only needs to write files into the snippets
@@ -127,17 +124,13 @@ produce intermittent failures that are unpleasant to diagnose.
 
 ## Ansible
 
-Run from a dedicated WSL2 Ubuntu distribution. Ansible cannot run on Windows —
-it forks worker processes and imports POSIX-only modules — so the tooling lives
-on the Linux side even though the repository sits on the Windows filesystem.
+Run Ansible from a Linux control machine.
 
 ### The inventory is static
 
-`inventory.yml` is written by hand and is not generated from Terraform state.
-Four machines whose addresses are themselves declared in `main.tf` do not need a
-dynamic inventory, and the duplication is turned into a control rather than a
-risk: `checks.yml` asserts that every declared address matches what the machine
-actually reports.
+`inventory.yml` is written by hand and is not generated from Terraform state. The
+addresses are also declared in `terraform/main.tf`; `checks.yml` asserts that the
+inventory matches the addresses reported by the machines.
 
 ```mermaid
 flowchart TB
@@ -159,12 +152,9 @@ flowchart TB
     INV -.->|hostvars| GV
 ```
 
-Two variables in `all.yml` exist to keep the two ends of a contract from
-drifting. `nfs_server_ip` is derived from
+Two variables in `all.yml` are derived from inventory data. `nfs_server_ip` comes from
 `hostvars[groups['storage'][0]].internal_ip`, and `kube_apiserver_endpoint` from
-the control plane host the same way. The address the export is served on and the
-address it is mounted from are therefore the same expression, not two literals
-that happen to match today.
+the control-plane host. This keeps the server and mount addresses consistent.
 
 ### The seven plays
 
@@ -194,11 +184,11 @@ flowchart TB
     P4 -.->|"mints the join token"| P6
 ```
 
-Two orderings in that graph are not obvious.
+The following explains two ordering dependencies.
 
-**Play 6 depends on play 4 for a value, not just for a state.** Every other
-cross-host value in this project is written down in `inventory.yml` and merely
-read. A bootstrap token cannot be: it is minted by the control plane, it expires,
+**Play 6 depends on play 4 for a value, not just for a state.** Other
+cross-host values in this project are written down in `inventory.yml` and merely
+read. A bootstrap token is different: it is minted by the control plane, it expires,
 and it is a secret. It has to travel between hosts during the run.
 
 ```mermaid
@@ -236,26 +226,22 @@ it would wait out its rollout timeout on a pod with nowhere to run.
 
 ### Idempotence
 
-Two mechanisms recur across the roles and are worth naming once.
-
 **Guard on the artefact, not on a flag.** `kubeadm init` and `kubeadm join`
 refuse to run twice and are not idempotent, so both are gated on a `stat` of the
 file kubeadm writes *last* — `admin.conf` for the control plane, `kubelet.conf`
-for a worker. Their presence means a previous run went all the way through
-rather than dying halfway.
+for a worker. Their presence indicates that the previous command completed.
 
 **Write the final content, do not fetch and patch it.** The control plane ends by
 installing `admin.conf` on the control station, with its `server:` address rewritten
-from the internal network — which the workstation has no route to — to the LAN
-address, which is in the certificate SANs. The file is read with `slurp` and written
-with `copy`, rather than `fetch`ed and then edited: a fetched file would differ from
+from the internal network address to the LAN address, which is in the certificate
+SANs. The file is read with `slurp` and written
+with `copy`, rather than `fetch`ed and then edited. A fetched file would differ from
 the remote one the moment it is patched, and `fetch` would re-download it on every
 run.
 
-That copy lands on `~/.kube/config` and **overwrites it**. There is one cluster here,
-so the file has one owner; `backup: true` keeps the previous version rather than
-merging it, and the day a second context matters, the answer is a separate file and
-a `KUBECONFIG` with two paths.
+That copy lands on `~/.kube/config` and **overwrites it**. `backup: true` keeps the
+previous version. For multiple clusters, use separate files or `KUBECONFIG` with
+multiple paths.
 
 **Read the output of `kubectl apply`.** It is idempotent by design and can run
 every time; it is the reporting that needs help, since it always exits 0. The
@@ -312,12 +298,12 @@ not a failed build, and play 7 still has somewhere to schedule.
 
 ### Tags
 
-Every play carries a tag, and they exist to **replay** one layer on a live
+Every play carries a tag. Tags **replay** one layer on a live
 cluster — not to install with. `--tags kube_prereq` on a bare set of VMs skips
 everything the join depends on and fails. The whole file is the installation
 procedure.
 
-`--tags cilium` is the sharpest edge here. It replays the Helm release on a
+`--tags cilium` requires particular care. It replays the Helm release on a
 cluster that already runs Cilium, which is fine; it is *not* a way to change the
 CNI of a running cluster. That operation needs a second pod CIDR, `cluster-pool`
 IPAM and a node-by-node rollout — a procedure, not a tag. The way this repository
@@ -328,10 +314,8 @@ the same contract.
 
 ## Verification
 
-`checks.yml` is deliberately **not** imported by `site.yml`. Its value is that it
-changes nothing and can be run at any moment, including on fresh VMs before any
-role has been applied — which is exactly when you most want to ask whether the
-machines are what the inventory claims.
+`checks.yml` is **not** imported by `site.yml`. It changes nothing and can be run
+before or after provisioning, including on fresh VMs.
 
 ```bash
 ansible-playbook checks.yml
@@ -379,8 +363,8 @@ never owned, so they are still there afterwards — a claim recreated with the s
 name will not find them automatically, but nothing was destroyed.
 
 Deleting a `PersistentVolumeClaim` renames its directory to `archived-<name>`
-instead of removing it (`archiveOnDelete: "true"`). It costs disk, and it will
-save you the first time a namespace is deleted by mistake.
+instead of removing it (`archiveOnDelete: "true"`). This preserves data after an
+accidental deletion but consumes disk space.
 
 ## Maintenance the build does not cover
 

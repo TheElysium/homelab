@@ -1,18 +1,17 @@
 # Homelab
 
-A three-node Kubernetes cluster, virtualised on a single Proxmox host, built to be
-learned rather than merely used. Everything is provisioned declaratively so the
-cluster can be destroyed and rebuilt without hesitation — that is the condition for
-experimenting freely with it.
+A three-node Kubernetes cluster running as virtual machines on a single Proxmox host.
+Terraform creates the virtual machines and Ansible configures the hosts and cluster.
+The setup is disposable so it can be rebuilt for experiments.
 
-The cluster is up: three nodes `Ready` on Kubernetes v1.35.7, Cilium carrying the
-pod network and announcing `LoadBalancer` addresses on the LAN, and a default
-`StorageClass` backed by an NFS server that lives outside the cluster. There is no
-application workload in it yet.
+The cluster currently has three `Ready` nodes running Kubernetes v1.35.7. Cilium
+provides the pod network and announces `LoadBalancer` addresses on the LAN. The
+default `StorageClass` uses an NFS server outside the cluster. No application
+workloads are deployed yet.
 
 ## Hardware
 
-One machine, and no plan for a second one:
+The entire lab runs on one machine:
 
 | | |
 |---|---|
@@ -22,13 +21,11 @@ One machine, and no plan for a second one:
 | Storage | 238 GB NVMe SSD |
 | Hypervisor | Proxmox VE 9.2.10 |
 
-Proxmox is installed on LVM-thin rather than ZFS, which keeps several gigabytes of
-RAM out of a filesystem cache and available to the virtual machines. The consequences
-of that choice, and the sizing it allows, are described in
+Proxmox uses LVM-thin rather than ZFS, leaving more RAM available to the virtual
+machines. The resulting storage and VM sizing are described in
 [docs/architecture.md](docs/architecture.md).
 
-A single host means a single point of failure for everything. Nothing in this design
-pretends otherwise.
+The Proxmox host is a single point of failure for the entire lab.
 
 ## Status
 
@@ -45,11 +42,12 @@ pretends otherwise.
 | Ansible — `nfs_provisioner` | Done | Dynamic provisioner, `nfs-client` as the default `StorageClass` |
 | Decision records | In progress | One file per decision, under `docs/decisions/` |
 | `LoadBalancer` addresses | Done | Cilium LB-IPAM over `192.168.1.210`–`.220`, announced by ARP |
-| Observability | Not started | Deliberately deferred — there is no memory budget for it yet |
+| Observability | Not started | Deferred because of the available memory |
 
-Two things the build does not do, and will not start doing on its own:
-Kubernetes upgrades are blocked by design (the packages are held), and the cluster
-certificates expire on **17 August 2027**. Both are covered in
+## Limitations
+
+The build does not perform Kubernetes upgrades; the packages are held. The cluster
+certificates expire on **17 August 2027**. Both limitations are covered in
 [docs/provisioning.md](docs/provisioning.md#maintenance-the-build-does-not-cover).
 
 ## Repository layout
@@ -57,6 +55,7 @@ certificates expire on **17 August 2027**. Both are covered in
 ```
 homelab/
 ├── README.md
+├── LICENSE                 MIT
 ├── .gitignore              state files, tfvars and SSH material are excluded
 ├── .gitattributes          LF line endings, enforced at commit time
 ├── .editorconfig           LF line endings, enforced in the editor
@@ -66,6 +65,7 @@ homelab/
 │   └── decisions/          architecture decision records
 ├── terraform/
 │   ├── versions.tf         Terraform floor, provider pinned exactly
+│   ├── .terraform.lock.hcl provider checksums, committed on purpose
 │   ├── main.tf             cloud image, cloud-init snippets, the four VMs
 │   ├── variables.tf        Proxmox endpoint and API token
 │   └── terraform.tfvars.example
@@ -80,19 +80,14 @@ homelab/
                             control_plane, cilium, worker, nfs_provisioner
 ```
 
-Terraform state is local and not committed: it contains the Proxmox API token in
-clear text.
+Terraform uses local state. State is not committed because it contains the Proxmox API
+token in clear text.
 
 ## Prerequisites
 
-The control station is a dedicated WSL2 Ubuntu distribution. Ansible cannot run on
-Windows — it forks its worker processes, and imports POSIX-only modules — so the
-tooling lives on the Linux side even though the repository sits on the Windows
-filesystem. Terraform alone would run fine on Windows; keeping both in the same place
-avoids maintaining two toolchains.
+Run Ansible from a Linux control machine.
 
-Before the Terraform layer can be applied, the following must exist and are not
-automated:
+Before applying Terraform, create the following manually:
 
 - A Proxmox user `terraform@pve` with an API token, granted only the privileges the
   provider actually needs (VM lifecycle, storage allocation, bridge attachment,
@@ -109,12 +104,12 @@ automated:
   repository. The Windows mount cannot express mode `600`, and `ssh` refuses a
   private key it considers world-readable.
 
-Two keypairs, then: one for the hypervisor account, one injected into the VMs by
-cloud-init. Separate uses, separate revocations.
+There are two SSH keypairs: one for the hypervisor account and one injected into the
+VMs by cloud-init.
 
 ## Building it
 
-From the WSL shell. First the machines, in `terraform/`:
+From WSL, create the machines first in `terraform/`:
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
@@ -124,28 +119,23 @@ terraform plan
 terraform apply
 ```
 
-`terraform init` downloads the provider at the exact version recorded in
-`.terraform.lock.hcl`, which is committed on purpose so the plugin and its checksums
-are reproducible. `terraform apply` downloads the Debian 13 cloud image onto the
-hypervisor, writes one cloud-init snippet per machine, and creates the four VMs.
+`terraform init` downloads the provider version recorded in `.terraform.lock.hcl`.
+The lock file is committed so the provider and its checksums are reproducible.
+`terraform apply` downloads the Debian 13 cloud image onto the hypervisor, writes one
+cloud-init snippet per machine, and creates the four VMs.
 
-The first apply takes a few minutes, most of it spent on the image download and on
-waiting for the QEMU guest agent to report an address on each new machine.
+The first apply takes a few minutes, mostly for the image download and for the QEMU
+guest agent to report an address on each new machine.
 
-Then the cluster, in `ansible/`:
+Then configure the cluster in `ansible/`:
 
 ```bash
 ansible-playbook checks.yml
 ansible-playbook site.yml
 ```
 
-`checks.yml` changes nothing and is safe to run at any time, including on machines
-that have never been configured. `site.yml` is idempotent: a second run on a
-healthy cluster reports `changed=0` on every host, and anything else is a bug in a
-role rather than an expected difference.
-
-If the workstation is connected to a corporate VPN, the `192.168.1.0/24` network may
-be unreachable from WSL — disconnect it before blaming the tooling.
+`checks.yml` is read-only and can be run before or after provisioning. `site.yml` is
+idempotent: a second run on a healthy cluster reports `changed=0` on every host.
 
 ## Documentation
 

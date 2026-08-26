@@ -26,8 +26,8 @@ effectively made once, at initialisation, for the life of the cluster.
 ## Considered Options
 
 **Keep kube-proxy, give up `LoadBalancer`.** Services stay on `NodePort`. Cilium
-is then a CNI and a policy engine only, and half the reason it was chosen in
-ADR-0001 disappears.
+is then only a CNI and policy engine, which does not meet the `LoadBalancer`
+requirement from ADR-0001.
 
 **Keep kube-proxy, add MetalLB.** MetalLB does its own L2 announcements and does
 not care about the service data path. This works, and it is the combination most
@@ -47,9 +47,8 @@ Replace kube-proxy. `InitConfiguration` carries `skipPhases: [addon/kube-proxy]`
 and Cilium is installed with `kubeProxyReplacement: true`, pointed at the API
 server by address since no ClusterIP is routable before the agent is up.
 
-The deciding argument is that the second option — kube-proxy plus MetalLB — is a
-working design that contradicts the reason Cilium was chosen. Choosing it would
-have meant reopening ADR-0001 rather than completing it.
+The second option, kube-proxy plus MetalLB, works but contradicts the reason Cilium
+was chosen. It would also require revisiting ADR-0001.
 
 ## Consequences
 

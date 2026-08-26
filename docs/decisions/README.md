@@ -1,16 +1,14 @@
 # Architecture decision records
 
-This directory holds the reasoning behind the design described in
-[../architecture.md](../architecture.md). The architecture document says what the
-system is; these records say why it is that way, and what was given up in exchange.
+This directory records the decisions behind the design described in
+[../architecture.md](../architecture.md). The architecture document describes the
+system; these records describe the alternatives and trade-offs.
 
-One decision per file. A record is written when a choice was not obvious — when there
-was a real alternative that a reasonable person might have picked instead. Choices
-that had no alternative are not decisions and do not need a record.
+Use one decision per file. Write a record when a choice had meaningful alternatives.
+Choices with no meaningful alternative do not need a record.
 
-Records are not updated when the design changes. A decision that no longer holds
-keeps its file and its text intact; a new record supersedes it. The history is the
-point.
+Do not update records when the design changes. Keep superseded decisions intact and
+add a new record that supersedes them.
 
 ## Format
 
@@ -23,9 +21,7 @@ sections, in this order:
 - **Considered Options** — what else was on the table, including the option of doing
   nothing.
 - **Decision** — what was chosen, and the reason that decided it.
-- **Consequences** — what follows, good and bad. The bad half is the one that earns
-  the record its keep; a Consequences section listing only benefits is a sign the
-  record is advocacy rather than documentation.
+- **Consequences** — the benefits, drawbacks, and operational impact of the decision.
 
 ## Status values
 

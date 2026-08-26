@@ -1,16 +1,12 @@
 # Architecture
 
-This document describes what the system is made of. It does not argue for the
-choices — that belongs in the [decision records](decisions/), one file per
-decision — and it does not describe how the system is built, which is
-[provisioning.md](provisioning.md).
+This document describes the system. The [decision records](decisions/) explain why
+the main choices were made, and [provisioning.md](provisioning.md) describes how it
+is built.
 
-**State of the system.** This describes the cluster as of the rebuild on Cilium;
-the run that produced it is the one in [provisioning.md](provisioning.md). Three
-nodes are `Ready` on Kubernetes v1.35.7, Cilium carries the pod network and hands
-out `LoadBalancer` addresses on the LAN, and a default `StorageClass` backed by
-NFS provisions volumes on demand. The one thing marked *planned* is
-observability.
+The cluster has three `Ready` nodes running Kubernetes v1.35.7. Cilium provides the
+pod network and announces `LoadBalancer` addresses on the LAN. A default
+`StorageClass` backed by NFS provisions volumes on demand. Observability is planned.
 
 ## Layers
 
@@ -42,8 +38,8 @@ flowchart TB
     N -->|NFS export| K8S
 ```
 
-**Hardware.** One machine, no redundancy anywhere. The loss of the SSD, the
-motherboard or the power supply is the loss of everything on it.
+**Hardware.** The lab runs on one machine. Losing its SSD, motherboard, or power
+supply takes down the entire lab.
 
 **Proxmox VE.** The hypervisor runs the virtual machines under KVM and owns two
 pieces of state the layers above depend on: the storage pools and the network
@@ -51,13 +47,12 @@ bridges. Storage is split between `local`, a plain directory holding the cloud
 image, the cloud-init snippets and backups, and `local-lvm`, an LVM-thin pool
 holding the virtual disks. *LVM-thin* means volumes are thin-provisioned: a 32 GB
 disk consumes only the blocks actually written. The sum of the declared sizes may
-therefore exceed the pool, and does here. The failure mode that follows is worth
-stating plainly — if the pool fills up, every virtual machine on it flips to
-read-only at the same moment.
+ therefore exceed the pool, and does here. If the pool fills up, every virtual
+ machine on it becomes read-only.
 
-**Virtual machines.** Four Debian 13 machines, each with two virtual NICs. They
-are the boundary between what Terraform owns and what Ansible owns: Terraform
-creates them and gives them an identity and addresses, and stops there.
+**Virtual machines.** Four Debian 13 machines, each with two virtual NICs.
+Terraform creates the machines and assigns their identity and addresses. Ansible
+configures everything inside them.
 
 **Kubernetes.** Three of the four machines form the cluster, installed with
 `kubeadm` on `containerd` 1.7.24. The fourth stays outside it and serves storage
@@ -79,22 +74,20 @@ Each machine is tagged in Proxmox with its role, taken from the same map, so the
 hypervisor UI shows the same grouping the Ansible inventory does.
 
 `k8s-master` keeps the standard `node-role.kubernetes.io/control-plane:NoSchedule`
-taint, so no application workload lands on it. That leaves two workers,
-deliberately symmetric: neither is special, and draining either one is an
-unremarkable operation.
+taint, so no application workload lands on it. The workers are interchangeable, so
+either one can be drained.
 
 `nfs-server` carries a second virtual disk of 40 GB, mounted by UUID on
 `/srv/nfs` and exported to the cluster network. Keeping it out of Kubernetes
-decouples the lifetime of the data from the lifetime of the cluster — the three
-nodes can be reset, reinstalled or destroyed and recreated without putting the
-data at risk. Terraform marks this machine `protection = true`, which makes
+decouples the data from the cluster lifecycle. The three nodes can be reset,
+reinstalled, or recreated without deleting the data. Terraform marks this machine
+`protection = true`, which makes
 Proxmox refuse to delete it; a `terraform destroy` fails on it rather than taking
 the data with it. The three Kubernetes nodes carry no such flag and are
 disposable by design.
 
-The storage machine remains a single point of failure for persistent volumes. On
-one physical host that is unavoidable, and replicated storage across three VMs on
-the same SSD would be redundancy in appearance only.
+The storage machine is a single point of failure for persistent volumes. Replicating
+storage across VMs on the same SSD would not provide real redundancy.
 
 ## Networks
 
@@ -108,7 +101,7 @@ the VMs.
 flowchart TB
     GW["Home gateway<br/>192.168.1.1"]
 
-    subgraph HOST["Proxmox host — 192.168.1.165"]
+    subgraph HOST["Proxmox host"]
         BR0(["vmbr0 — bridged to the physical NIC"])
         BR1(["vmbr1 — isolated, no host IP, no gateway"])
     end
@@ -131,24 +124,20 @@ flowchart TB
     BR1 ---|10.0.10.10| NFS
 ```
 
-**`vmbr0` — LAN, `192.168.1.0/24`.** Administration: SSH, Ansible, and `kubectl`
-from the workstation. The default gateway, `192.168.1.1`, is configured on this
-interface and on this interface only.
+**`vmbr0` — LAN, `192.168.1.0/24`.** Administration traffic uses SSH, Ansible, and
+`kubectl`. The default gateway, `192.168.1.1`, is configured on this interface only.
 
-**`vmbr1` — cluster-internal, `10.0.10.0/24`.** All infrastructure traffic: etcd,
+**`vmbr1` — cluster-internal, `10.0.10.0/24`.** Infrastructure traffic includes etcd,
 the API server, kubelet registration, the Cilium VXLAN overlay, and NFS. It has
-**no gateway and no default route** — two default routes on one machine produce
-intermittent failures that are unpleasant to diagnose. The hypervisor itself
+**no gateway and no default route**. The hypervisor itself
 holds no address on this segment.
 
-The API server listens on `10.0.10.11:6443` and nowhere else. Nothing on the LAN
-can reach it, which is the point of the second interface. `kubectl` from the
-workstation therefore goes through SSH to the master; the certificate does carry
-the LAN address as a SAN, so exposing it later needs no reissue.
+The API server advertises `10.0.10.11:6443`. The API certificate also includes the
+LAN address as a SAN, so changing the endpoint later does not require a reissue.
 
-The separation is a property of the configuration, not of the wiring — see
+The separation depends on the configuration as well as the wiring. See
 [provisioning.md](provisioning.md#which-interface-twice) for the three settings
-that enforce it and the identical failure they produce when wrong.
+that enforce it.
 
 `/etc/hosts` on every machine maps the four internal addresses to
 `<name>.internal`, so the nodes can address each other by name over `vmbr1`
@@ -161,7 +150,6 @@ LAN, `192.168.1.0/24`:
 | Address | Assignment |
 |---|---|
 | `192.168.1.1` | Gateway |
-| `192.168.1.165` | Proxmox host |
 | `192.168.1.200` | `k8s-master` |
 | `192.168.1.201` | `k8s-worker-1` |
 | `192.168.1.202` | `k8s-worker-2` |
@@ -191,8 +179,7 @@ One node answers ARP for a given service address at a time. That is failover, no
 load balancing: if the announcing node goes down another takes the lease, but
 traffic is never spread across nodes.
 
-The cluster is not exposed to the Internet. Access is over the LAN, from the
-workstation or from another device in the house.
+The cluster is not exposed to the Internet. Access is through the LAN.
 
 ## Inside the cluster
 
@@ -215,10 +202,10 @@ flowchart TB
     OP -.->|CRDs, LB-IPAM, garbage collection| CIL
 ```
 
-**Control plane.** Single node, so `etcd` is a single member and losing the master
-is losing the cluster. `controlPlaneEndpoint` is nonetheless set, because it is
-what the workers are handed as the address to talk to and adding a second control
-plane later requires it to have been there from the start.
+**Control plane.** There is one control-plane node, so `etcd` is a single member
+and losing the master loses the cluster. `controlPlaneEndpoint` is set because
+workers use it to reach the API server and a second control plane would require it
+to be configured from the start.
 
 **Cilium 1.20.1**, installed from its Helm chart, VXLAN backend, with IPAM in
 `kubernetes` mode: `kube-controller-manager` allocates each node a `/24` out of
@@ -229,9 +216,9 @@ tunnel follows the kubelet's `node-ip`, which is the internal address, so overla
 traffic never touches the LAN.
 
 **There is no kube-proxy.** The `addon/kube-proxy` phase is skipped at
-`kubeadm init` and Cilium's eBPF dataplane owns service routing — a prerequisite
-for the L2 announcements above, not a performance choice. Services are inspected
-with `cilium service list` rather than `iptables -t nat -L`.
+`kubeadm init` and Cilium's eBPF dataplane owns service routing. This is required
+for the L2 announcements above. Inspect services with `cilium service list` rather
+than `iptables -t nat -L`.
 
 The two `CiliumLoadBalancerIPPool` and `CiliumL2AnnouncementPolicy` objects are
 the only Cilium configuration kept as a manifest; everything else is Helm values.
@@ -241,23 +228,20 @@ the only Cilium configuration kept as a manifest; everything else is Helm values
 (`Delete` / `Immediate` / `archiveOnDelete: true`). A claim becomes a
 subdirectory of the export within seconds.
 
-Two consequences of using the in-tree NFS volume plugin are worth stating. The
-mount is performed by the *kernel of the node running the pod*, not by the pod —
-which is why every node carries `nfs-common`, and why the provisioner can be
-deleted without any existing pod losing its disk; it is only needed to create and
-remove directories. And because the volume is `ReadWriteMany` on a share reachable
-from every node, a pod rescheduled onto another worker finds exactly the same
-data.
+The in-tree NFS volume plugin mounts volumes through the kernel of the node running
+the pod. This is why every node has `nfs-common`, and why deleting the provisioner
+does not affect existing volumes. The provisioner only creates and removes
+directories. Because the volumes are `ReadWriteMany` shares reachable from every
+node, a rescheduled pod sees the same data.
 
-The export is served with `no_root_squash`: root on any machine in
-`10.0.10.0/24` is root on the data. That is acceptable only because the segment
-is isolated and has no gateway, and it is the single strongest reason not to give
-`vmbr1` one.
+The export uses `no_root_squash`, so root on any machine in `10.0.10.0/24` is root
+on the data. This is acceptable only because the segment is isolated and has no
+gateway.
 
 **Certificates expire on 17 August 2027** — kubeadm's one-year default for leaf
 certificates, ten years for the CAs. Nothing in the build renews them.
 
-**Observability is deliberately absent.** See the memory budget below.
+**Observability is not installed.** See the memory budget below.
 
 ## Sizing
 
@@ -275,8 +259,8 @@ The pool holds roughly 141 GB.
 
 Thin provisioning means real occupancy starts around 15–20 GB and grows with use.
 The declared total is what the pool would owe if every block were written, which
-is the number that matters for the read-only failure described above. Monitoring
-occupancy of the pool is therefore not optional.
+is the number that matters for the read-only failure described above. Monitor pool
+occupancy.
 
 The separate `local` directory storage, around 60 GB free, holds the cloud image,
 the cloud-init snippets and `vzdump` backups.
@@ -294,20 +278,20 @@ the cloud-init snippets and `vzdump` backups.
 
 Terraform sets both a `dedicated` and a `floating` value per machine; the second
 enables ballooning, letting the hypervisor reclaim memory a guest is not using.
-Ballooning redistributes idle memory with a reaction delay — it does not create
-any. Under simultaneous pressure from all four machines it saves nothing, so the
-2 GB margin is a real physical reserve rather than an accounting device.
+Ballooning redistributes idle memory with a reaction delay; it does not create
+memory. Under simultaneous pressure from all four machines it saves nothing, so the
+2 GB margin is a real physical reserve.
 
-This is why an observability stack is not part of the build: Prometheus, Grafana
-and Loki together consume enough to eat that margin whole. They are planned as a
-later phase, one component at a time with explicit resource limits.
+Prometheus, Grafana, and Loki together would consume most of that margin. They are
+planned for a later phase, one component at a time with explicit resource limits.
 
 It is also why `nfs-subdir-external-provisioner` was chosen over the actively
 maintained `csi-driver-nfs`: the latter is a controller plus a DaemonSet plus five
 sidecars, on workers with 3.5 GB.
 
-CPU is overcommitted without reservation: 8 vCPU declared across four machines on
-a 4-core host. For homelab workloads this is unremarkable.
+CPU is overcommitted without reservation: 8 vCPU are declared across four machines
+on a 4-core host. This is acceptable for the current workload but provides no CPU
+reservation.
 
 ## Related documents
 
