@@ -1,0 +1,8 @@
+---
+# kubernetes.core.helm drives this binary; the collection does not ship it.
+helm_version: v3.21.4
+helm_binary: /usr/local/bin/helm
+
+# Without this plugin the module's own idempotency check misses changes when
+# chart_repo_url is set, and reports changed on every run.
+helm_diff_version: v3.15.11

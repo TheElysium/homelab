@@ -1,0 +1,47 @@
+---
+- name: Read the installed helm version
+  # Guarding on the path alone would keep an old binary after a version bump.
+  ansible.builtin.command:
+    cmd: "{{ helm_binary }} version --short"
+  register: helm_installed
+  failed_when: false
+  changed_when: false
+
+- name: Install the helm binary
+  ansible.builtin.unarchive:
+    src: https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz
+    dest: "{{ helm_binary | dirname }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+      - linux-amd64/helm
+  when: helm_version not in helm_installed.stdout
+
+- name: Install git
+  # helm plugin install resolves any URL to a git clone.
+  ansible.builtin.apt:
+    name: git
+    state: present
+
+- name: List the installed helm plugins
+  ansible.builtin.command:
+    cmd: "{{ helm_binary }} plugin list"
+  register: helm_plugins
+  changed_when: false
+
+- name: Remove a helm diff plugin of the wrong version
+  # plugin install refuses to overwrite, and plugin update ignores the pin.
+  ansible.builtin.command:
+    cmd: "{{ helm_binary }} plugin uninstall diff"
+  when:
+    - "'diff' in helm_plugins.stdout"
+    - helm_diff_version | regex_replace('^v', '') not in helm_plugins.stdout
+  changed_when: true
+
+- name: Install the helm diff plugin
+  ansible.builtin.command:
+    cmd: >-
+      {{ helm_binary }} plugin install https://github.com/databus23/helm-diff
+      --version {{ helm_diff_version }}
+  when: helm_diff_version | regex_replace('^v', '') not in helm_plugins.stdout
+  changed_when: true

@@ -1,34 +1,4 @@
 ---
-- name: Install the helm binary
-  ansible.builtin.unarchive:
-    src: https://get.helm.sh/helm-{{ cilium_helm_version }}-linux-amd64.tar.gz
-    dest: /usr/local/bin
-    remote_src: true
-    extra_opts:
-      - --strip-components=1
-      - linux-amd64/helm
-    creates: "{{ cilium_helm_binary }}"
-
-- name: Install git
-  # helm plugin install resolves any URL to a git clone.
-  ansible.builtin.apt:
-    name: git
-    state: present
-
-- name: List the installed helm plugins
-  ansible.builtin.command:
-    cmd: "{{ cilium_helm_binary }} plugin list"
-  register: cilium_helm_plugins
-  changed_when: false
-
-- name: Install the helm diff plugin
-  ansible.builtin.command:
-    cmd: >-
-      {{ cilium_helm_binary }} plugin install https://github.com/databus23/helm-diff
-      --version {{ cilium_helm_diff_version }}
-  when: "'diff' not in cilium_helm_plugins.stdout"
-  changed_when: true
-
 - name: Deploy Cilium
   kubernetes.core.helm:
     name: cilium
@@ -38,7 +8,7 @@
     release_namespace: "{{ cilium_namespace }}"
     values: "{{ cilium_values }}"
     kubeconfig: /etc/kubernetes/admin.conf
-    binary_path: "{{ cilium_helm_binary }}"
+    binary_path: "{{ helm_binary }}"
     wait: true
     wait_timeout: "{{ cilium_rollout_timeout }}"
 

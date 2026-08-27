@@ -1,14 +1,6 @@
 ---
 cilium_version: 1.20.1
 
-# kubernetes.core.helm drives this binary; the collection does not ship it.
-cilium_helm_version: v3.21.4
-cilium_helm_binary: /usr/local/bin/helm
-
-# Without this plugin the module's own idempotency check misses changes when
-# chart_repo_url is set, and reports changed on every run.
-cilium_helm_diff_version: v3.15.11
-
 cilium_namespace: kube-system
 
 cilium_values:
