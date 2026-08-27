@@ -7,7 +7,8 @@ is built.
 The cluster has three `Ready` nodes running Kubernetes v1.35.7. Cilium provides the
 pod network and announces `LoadBalancer` addresses on the LAN. A default
 `StorageClass` backed by NFS provisions volumes on demand. Prometheus and Grafana
-collect and display the cluster's own metrics.
+collect and display the cluster's own metrics, and PostgreSQL runs as the first
+stateful application workload, under the CloudNativePG operator.
 
 ## Layers
 
@@ -196,12 +197,19 @@ flowchart TB
     subgraph NS3["storage"]
         PROV["nfs-client-provisioner<br/>Deployment, 1 replica"]
     end
+    subgraph NS4["cnpg-system + postgres"]
+        PGOP["cloudnative-pg operator<br/>Deployment, 1 replica"]
+        PG["Cluster/postgres<br/>1 PostgreSQL instance"]
+    end
     SC["StorageClass nfs-client (default)"]
     EXP[("nfs-server:/srv/nfs/kubernetes")]
 
     PROV --> SC
     PROV -->|watches PVCs, creates dirs| EXP
     OP -.->|CRDs, LB-IPAM, garbage collection| CIL
+    PGOP -->|creates PVCs, supervises| PG
+    PG -->|claims 20 Gi per instance| SC
+    SC --> EXP
 ```
 
 **Control plane.** There is one control-plane node, so `etcd` is a single member
@@ -239,6 +247,23 @@ node, a rescheduled pod sees the same data.
 The export uses `no_root_squash`, so root on any machine in `10.0.10.0/24` is root
 on the data. This is acceptable only because the segment is isolated and has no
 gateway.
+
+**PostgreSQL** runs under the CloudNativePG operator, Helm-installed in
+`cnpg-system`, with the database itself as a single-instance `Cluster` in the
+`postgres` namespace. Its PVCs are dynamic, through the same `nfs-client`
+StorageClass as everything else. Unlike Prometheus, whose
+mmap-based storage keeps it on a `local` PV, PostgreSQL's `fsync`-based storage
+is supported on network filesystems; see
+[ADR-0006](decisions/0006-postgresql-on-cloudnativepg-with-nfs-storage.md). The
+pod runs on whichever worker the scheduler picks, since nothing pins it and
+neither worker is distinguished; the data follows the NFS export, not the node.
+
+The instance exposes Prometheus metrics on port 9187 through a `PodMonitor`
+the operator creates, and Grafana carries a storage dashboard: WAL on disk and
+per-database size. That is the watch, not a guardrail — NFS enforces no
+capacity of its own, so a PVC size on `nfs-client` is declarative only, and
+the real ceiling is the storage VM's data disk shared by every claim on the
+export.
 
 Two decisions rest on that same isolation. The second is etcd's metrics port, 2381,
 which carries no authentication and is bound to the internal address so Prometheus

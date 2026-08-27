@@ -1,0 +1,48 @@
+{{ ansible_managed | comment }}
+# Custom metrics for the instance exporter, merged with the operator's default
+# set. The cnpg.io/reload label makes instances pick up changes without the
+# kubectl cnpg reload subcommand.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ postgres_cluster_name }}-monitoring
+  namespace: {{ postgres_namespace }}
+  labels:
+    cnpg.io/reload: ""
+data:
+  queries: |
+    pg_database:
+      query: |
+        SELECT datname, pg_database_size(datname) AS size_bytes
+        FROM pg_database
+        WHERE datallowconn AND NOT datistemplate
+      metrics:
+        - datname:
+            usage: "LABEL"
+            description: "Database name"
+        - size_bytes:
+            usage: "GAUGE"
+            description: "Size of the database in bytes"
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ postgres_cluster_name }}
+  namespace: {{ postgres_namespace }}
+spec:
+  instances: {{ postgres_instances }}
+  # The image is left to the operator: its default is rebuilt for each release
+  # with patched PostgreSQL minor versions, so pinning a tag here would freeze
+  # a version that stops receiving security fixes.
+  storage:
+    size: {{ postgres_volume_size }}
+    storageClass: {{ postgres_storage_class }}
+  monitoring:
+    # The operator creates the PodMonitor that points Prometheus at the
+    # instance's :9187/metrics endpoint. Scraping only happens because
+    # kube-prometheus-stack is told to pick up foreign PodMonitors —
+    # see the monitoring role's values.
+    enablePodMonitor: true
+    customQueriesConfigMap:
+      - name: {{ postgres_cluster_name }}-monitoring
+        key: queries

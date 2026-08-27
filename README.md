@@ -7,7 +7,8 @@ The setup is disposable so it can be rebuilt for experiments.
 The cluster currently has three `Ready` nodes running Kubernetes v1.35.7. Cilium
 provides the pod network and announces `LoadBalancer` addresses on the LAN. The
 default `StorageClass` uses an NFS server outside the cluster. Prometheus and
-Grafana collect the cluster's own metrics; no other workload is deployed yet.
+Grafana collect the cluster's own metrics. PostgreSQL runs under CloudNativePG,
+with its volumes on the same NFS server.
 
 ## Hardware
 
@@ -43,6 +44,7 @@ The Proxmox host is a single point of failure for the entire lab.
 | Decision records | In progress | One file per decision, under `docs/decisions/` |
 | `LoadBalancer` addresses | Done | Cilium LB-IPAM over `192.168.1.210`–`.220`, announced by ARP |
 | Ansible — `monitoring` | Done | `kube-prometheus-stack`, Prometheus on a `local` PV, Grafana on `192.168.1.210` |
+| Ansible — `postgres` | Done | CloudNativePG operator, single-instance PostgreSQL cluster on `nfs-client`, PodMonitor + Grafana storage dashboard |
 
 ## Limitations
 
@@ -74,10 +76,11 @@ homelab/
     ├── inventory.yml       four hosts, written by hand
     ├── group_vars/         all, k8s_cluster, storage
     ├── requirements.yml    pinned Ansible collections
-    ├── site.yml            eight plays, in dependency order
+    ├── site.yml            nine plays, in dependency order
     ├── checks.yml          read-only verification, safe at any time
     └── roles/              common, nfs_server, kube_prereq, control_plane,
-                            helm, cilium, worker, nfs_provisioner, monitoring
+                            helm, cilium, worker, nfs_provisioner, monitoring,
+                            postgres
 ```
 
 ## Prerequisites

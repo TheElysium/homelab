@@ -76,3 +76,12 @@
   tags: [monitoring]
   roles:
     - monitoring
+
+- name: Deploy PostgreSQL
+  hosts: control_plane
+  become: true
+  # After nfs_provisioner for a real dependency: the database claims its
+  # volumes through the nfs-client StorageClass.
+  tags: [postgres]
+  roles:
+    - postgres

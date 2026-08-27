@@ -56,6 +56,9 @@ monitoring_values:
       # Without this the chart only picks up ServiceMonitors carrying its own
       # release label, which silently ignores anything added later by hand.
       serviceMonitorSelectorNilUsesHelmValues: false
+      # Same contract for PodMonitors: CloudNativePG creates one per
+      # PostgreSQL Cluster, without the release label.
+      podMonitorSelectorNilUsesHelmValues: false
       storageSpec:
         volumeClaimTemplate:
           spec:

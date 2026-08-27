@@ -1,0 +1,32 @@
+---
+# CloudNativePG operator, Helm chart from https://cloudnative-pg.github.io/charts.
+postgres_chart_version: 0.29.0
+postgres_operator_namespace: cnpg-system
+
+postgres_operator_values: {}
+
+# The database itself. The operator creates one PVC per instance from these
+# values; both are fixed at creation and resizing later needs an operator run.
+postgres_namespace: postgres
+postgres_cluster_name: postgres
+postgres_instances: 1
+
+# Backed by the storage VM through the nfs-client provisioner. NFS is an
+# accepted storage class for PostgreSQL, unlike Prometheus's mmap'd blocks; see
+# docs/decisions/0006-postgresql-on-cloudnativepg-with-nfs-storage.md.
+#
+# The declared size is not enforced by NFS — it is a directory on the export,
+# and the real ceiling is the storage VM's 40 GB data disk. Filling it is
+# watched, not prevented: WAL and database size land in Grafana.
+postgres_storage_class: nfs-client
+postgres_volume_size: 20Gi
+
+postgres_addon_dir: /etc/kubernetes/addons
+postgres_cluster_manifest: "{{ postgres_addon_dir }}/postgres-cluster.yaml"
+postgres_dashboard_manifest: "{{ postgres_addon_dir }}/postgres-dashboard.yaml"
+
+# The Grafana sidecar ships with kube-prometheus-stack and picks up dashboard
+# ConfigMaps from its namespace by label.
+postgres_dashboard_namespace: monitoring
+
+postgres_rollout_timeout: 600s

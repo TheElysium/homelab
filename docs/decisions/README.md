@@ -56,3 +56,4 @@ even if the title turns out to be a poor one.
 | [ADR-0003 — Helm as the deployment channel for cluster components](0003-helm-as-the-deployment-channel.md) | `accepted` |
 | [ADR-0004 — Prometheus on a local PersistentVolume](0004-prometheus-on-a-local-persistentvolume.md) | `accepted` |
 | [ADR-0005 — Expose control-plane metrics on the internal network](0005-expose-control-plane-metrics-on-the-internal-network.md) | `accepted` |
+| [ADR-0006 — PostgreSQL on CloudNativePG with NFS storage](0006-postgresql-on-cloudnativepg-with-nfs-storage.md) | `accepted` |

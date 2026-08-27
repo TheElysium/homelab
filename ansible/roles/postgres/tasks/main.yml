@@ -1,0 +1,105 @@
+---
+- name: Create the operator namespace
+  # Helm creates the namespace on its own, but the role reports changes the
+  # same way the other roles do, and a namespace is cheaper to reconcile here.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl create namespace {{ postgres_operator_namespace }}
+      --dry-run=client -o yaml | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_operator_namespace_apply
+  changed_when: "'created' in postgres_operator_namespace_apply.stdout"
+
+- name: Deploy the CloudNativePG operator
+  kubernetes.core.helm:
+    name: cloudnative-pg
+    chart_ref: cloudnative-pg
+    chart_repo_url: https://cloudnative-pg.github.io/charts
+    chart_version: "{{ postgres_chart_version }}"
+    release_namespace: "{{ postgres_operator_namespace }}"
+    values: "{{ postgres_operator_values }}"
+    kubeconfig: /etc/kubernetes/admin.conf
+    binary_path: "{{ helm_binary }}"
+    wait: true
+    wait_timeout: "{{ postgres_rollout_timeout }}"
+
+- name: Wait for the Cluster CRD to be registered
+  # The CRDs are applied by the operator at runtime, not carried by the chart.
+  # Applying the Cluster immediately would fail with "no matches for kind".
+  ansible.builtin.command:
+    cmd: kubectl wait --for=condition=established crd clusters.postgresql.cnpg.io
+    # kubectl wait errors, rather than waits, on a resource that does not
+    # exist yet, so the first attempt after a fresh install can race the
+    # operator. The retry turns that error into the wait it should have been.
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_crd_wait
+  until: postgres_crd_wait.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Create the postgres namespace
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl create namespace {{ postgres_namespace }}
+      --dry-run=client -o yaml | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_namespace_apply
+  changed_when: "'created' in postgres_namespace_apply.stdout"
+
+- name: Write the cluster manifest
+  ansible.builtin.template:
+    src: postgres-cluster.yaml.j2
+    dest: "{{ postgres_cluster_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the cluster manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ postgres_cluster_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_cluster_apply
+  changed_when: >-
+    'created' in postgres_cluster_apply.stdout
+    or 'configured' in postgres_cluster_apply.stdout
+
+- name: Wait for PostgreSQL to become ready
+  # The Cluster condition is Ready only once the instance passes its probes,
+  # which implies the PVC is bound and mounted — the first point where a
+  # storage problem shows up.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=Ready cluster/{{ postgres_cluster_name }}
+      -n {{ postgres_namespace }} --timeout={{ postgres_rollout_timeout }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false
+
+- name: Write the Grafana dashboard manifest
+  ansible.builtin.template:
+    src: postgres-dashboard.yaml.j2
+    dest: "{{ postgres_dashboard_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the Grafana dashboard manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ postgres_dashboard_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_dashboard_apply
+  changed_when: >-
+    'created' in postgres_dashboard_apply.stdout
+    or 'configured' in postgres_dashboard_apply.stdout

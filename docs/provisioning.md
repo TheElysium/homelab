@@ -25,7 +25,7 @@ flowchart LR
     end
 
     subgraph ANS["Ansible — site.yml"]
-        PLAYS["8 plays<br/>9 roles"]
+        PLAYS["9 plays<br/>10 roles"]
     end
 
     PVE --> IMG --> SNIP --> VM --> BOOT --> PLAYS --> OUT["3-node cluster<br/>+ default StorageClass"]
@@ -159,7 +159,7 @@ Two variables in `all/main.yml` are derived from inventory data. `nfs_server_ip`
 `hostvars[groups['storage'][0]].internal_ip`, and `kube_apiserver_endpoint` from
 the control-plane host. This keeps the server and mount addresses consistent.
 
-### The eight plays
+### The nine plays
 
 Collections first — the run fails at parse time without them:
 
@@ -198,9 +198,11 @@ flowchart TB
     P6["6 · worker → worker<br/>kubeadm join"]
     P7["7 · control_plane → nfs_provisioner<br/>Deployment + default StorageClass"]
     P8["8 · control_plane → monitoring<br/>local PV, kube-prometheus-stack"]
+    P9["9 · control_plane → postgres<br/>CloudNativePG operator, PostgreSQL cluster"]
 
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9
     P6 -.->|"needs a schedulable node"| P7
+    P7 -.->|"claims volumes through nfs-client"| P9
     P5 -.->|"no node is Ready without a CNI"| P6
     P4 -.->|"mints the join token"| P6
 ```
@@ -284,17 +286,17 @@ tasks set `changed_when` on the presence of `created` or `configured` in stdout 
 objects that did not move come back as `unchanged`.
 
 **Let Helm report its own changes.** `kubernetes.core.helm` compares the values
-it is given against the installed release, so the `cilium` and `monitoring` roles
-need no `changed_when` of their own. This is the one component that does not follow the
-`kubectl apply` pattern above; [ADR-0003](decisions/0003-helm-as-the-deployment-channel.md)
-records why.
+it is given against the installed release, so the `cilium`, `monitoring` and
+`postgres` roles need no `changed_when` of their own. This is the one component
+that does not follow the `kubectl apply` pattern above;
+[ADR-0003](decisions/0003-helm-as-the-deployment-channel.md) records why.
 
 That comparison is only reliable with the `helm diff` plugin installed. The
 module's own words: the default idempotency check *"can fail to report changes
 when `release_state` is set to `present` and `chart_repo_url` is defined"* — both
-of which both roles do. The binary and the plugin are therefore installed by a
-`helm` role that the two declare as a dependency, and the `changed=0` claim above
-depends on it.
+of which all three roles do. The binary and the plugin are therefore installed
+by a `helm` role that each of the three declares as a dependency, and the
+`changed=0` claim above depends on it.
 
 That role is also why neither pins its own helm version. Two pins would drift, and
 a guard on the binary's *path* would keep the old binary after a bump; the role
@@ -307,6 +309,10 @@ does not carry them. Applying the pool immediately after the release fails with
 `no matches for kind`, so the role interposes a `kubectl wait --for=condition=established`,
 itself retried because `kubectl wait` errors on a resource that does not exist
 yet instead of waiting for it.
+
+The `postgres` role repeats the pattern one play later:
+`clusters.postgresql.cnpg.io` is registered by the CloudNativePG operator at
+runtime, and the `Cluster` manifest waits behind the same retried wait.
 
 ### Which interface, twice
 
