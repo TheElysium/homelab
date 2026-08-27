@@ -68,3 +68,41 @@
   delegate_to: localhost
   become: false
   no_log: true
+
+- name: Bind the control-plane metrics endpoints to the internal network
+  # No-op on a fresh cluster: kubeadm generated these manifests from the
+  # template above. This is here for a cluster that was built before the
+  # arguments existed, and it is what keeps the two representations from
+  # diverging.
+  ansible.builtin.replace:
+    path: "{{ control_plane_manifest_dir }}/{{ item.manifest }}"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+  loop: "{{ control_plane_metrics_endpoints }}"
+  loop_control:
+    label: "{{ item.manifest }}"
+
+- name: Wait for the metrics endpoints to answer on the internal network
+  # The kubelet watches the manifest directory and restarts the component on
+  # its own. Waiting on internal_ip rather than the pod is what actually
+  # proves the rebind: the previous process never listened there.
+  ansible.builtin.wait_for:
+    host: "{{ internal_ip }}"
+    port: "{{ item.port }}"
+    timeout: "{{ control_plane_metrics_timeout }}"
+  loop: "{{ control_plane_metrics_endpoints }}"
+  loop_control:
+    label: "{{ item.manifest }}"
+
+- name: Wait for the API server to be healthy again
+  # Restarting etcd on a single-control-plane cluster leaves a window where
+  # the API server is listening but answering nothing.
+  ansible.builtin.command:
+    cmd: kubectl get --raw /readyz
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: control_plane_readyz
+  until: control_plane_readyz is succeeded
+  retries: 24
+  delay: 5
+  changed_when: false

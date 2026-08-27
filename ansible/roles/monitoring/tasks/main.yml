@@ -1,0 +1,102 @@
+---
+- name: Check that the Grafana password is defined
+  # Without it the chart falls back to its documented default, on a service
+  # published to the LAN.
+  ansible.builtin.assert:
+    that: grafana_admin_password is defined
+    fail_msg: >-
+      grafana_admin_password is not defined. From the ansible directory, run
+      ansible-vault create group_vars/all/vault.yml, then replay with
+      --ask-vault-pass. A vault created anywhere else is not loaded.
+
+- name: Create the local volume directory on {{ monitoring_storage_node }}
+  # Kubernetes references a local volume, it never creates one.
+  ansible.builtin.file:
+    path: "{{ monitoring_local_path }}"
+    state: directory
+    owner: "{{ monitoring_local_owner }}"
+    group: "{{ monitoring_local_group }}"
+    mode: "0755"
+  delegate_to: "{{ monitoring_storage_node }}"
+
+- name: Create the addon manifest directory
+  ansible.builtin.file:
+    path: "{{ monitoring_addon_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the local storage manifest
+  ansible.builtin.template:
+    src: prometheus-local-storage.yaml.j2
+    dest: "{{ monitoring_storage_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the local storage manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ monitoring_storage_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: monitoring_storage_apply
+  changed_when: >-
+    'created' in monitoring_storage_apply.stdout
+    or 'configured' in monitoring_storage_apply.stdout
+
+- name: Create the monitoring namespace
+  # The Secret below has to exist before the release, so the namespace cannot
+  # be left to helm.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl create namespace {{ monitoring_namespace }}
+      --dry-run=client -o yaml | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: monitoring_namespace_apply
+  changed_when: "'created' in monitoring_namespace_apply.stdout"
+
+- name: Create the Grafana admin secret
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl create secret generic {{ monitoring_grafana_secret }}
+      -n {{ monitoring_namespace }}
+      --from-literal=admin-user=admin
+      --from-literal=admin-password='{{ monitoring_grafana_admin_password }}'
+      --dry-run=client -o yaml | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: monitoring_secret_apply
+  changed_when: "'created' in monitoring_secret_apply.stdout"
+  no_log: true
+
+- name: Deploy kube-prometheus-stack
+  kubernetes.core.helm:
+    name: kube-prometheus-stack
+    chart_ref: kube-prometheus-stack
+    chart_repo_url: https://prometheus-community.github.io/helm-charts
+    chart_version: "{{ monitoring_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    values: "{{ monitoring_values }}"
+    kubeconfig: /etc/kubernetes/admin.conf
+    binary_path: "{{ helm_binary }}"
+    wait: true
+    wait_timeout: "{{ monitoring_rollout_timeout }}"
+
+- name: Wait for Prometheus to bind its volume and start
+  # The claim stays Pending until the pod is scheduled, so this is the first
+  # point where a mismatch between the PV and the claim shows up.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=Ready pod
+      -l app.kubernetes.io/name=prometheus
+      -n {{ monitoring_namespace }} --timeout={{ monitoring_rollout_timeout }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false

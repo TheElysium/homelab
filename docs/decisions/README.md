@@ -54,3 +54,5 @@ even if the title turns out to be a poor one.
 | [ADR-0001 — Cilium as the CNI](0001-cilium-as-the-cni.md) | `accepted` |
 | [ADR-0002 — Replace kube-proxy with Cilium](0002-replace-kube-proxy-with-cilium.md) | `accepted` |
 | [ADR-0003 — Helm as the deployment channel for cluster components](0003-helm-as-the-deployment-channel.md) | `accepted` |
+| [ADR-0004 — Prometheus on a local PersistentVolume](0004-prometheus-on-a-local-persistentvolume.md) | `accepted` |
+| [ADR-0005 — Expose control-plane metrics on the internal network](0005-expose-control-plane-metrics-on-the-internal-network.md) | `accepted` |

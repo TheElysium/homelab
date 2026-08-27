@@ -40,6 +40,10 @@ kubeconfig-*
 *.retry
 ansible/collections/
 .vault_pass
+# An encrypted vault would be safe to commit, but the same safety net applies:
+# one forgotten --encrypt and the password is in the history.
+vault.yml
+vault.yaml
 
 # --- Working documents ---
 # Design specifications, not versioned (user decision)

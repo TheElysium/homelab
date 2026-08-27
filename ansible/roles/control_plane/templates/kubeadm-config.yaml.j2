@@ -31,6 +31,22 @@ controlPlaneEndpoint: {{ kube_apiserver_endpoint }}:{{ kube_apiserver_port }}
 networking:
   podSubnet: {{ pod_network_cidr }}
   serviceSubnet: {{ service_cidr }}
+# Metrics served on loopback are unreachable from a Prometheus pod on a worker.
+# vmbr1 has no gateway, and etcd's port carries no authentication.
+# See docs/decisions/0005-expose-control-plane-metrics-on-the-internal-network.md.
+controllerManager:
+  extraArgs:
+    - name: bind-address
+      value: "0.0.0.0"
+scheduler:
+  extraArgs:
+    - name: bind-address
+      value: "0.0.0.0"
+etcd:
+  local:
+    extraArgs:
+      - name: listen-metrics-urls
+        value: http://0.0.0.0:2381
 apiServer:
   certSANs:
 {% for san in control_plane_cert_sans %}

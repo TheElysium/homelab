@@ -6,8 +6,8 @@ The setup is disposable so it can be rebuilt for experiments.
 
 The cluster currently has three `Ready` nodes running Kubernetes v1.35.7. Cilium
 provides the pod network and announces `LoadBalancer` addresses on the LAN. The
-default `StorageClass` uses an NFS server outside the cluster. No application
-workloads are deployed yet.
+default `StorageClass` uses an NFS server outside the cluster. Prometheus and
+Grafana collect the cluster's own metrics; no other workload is deployed yet.
 
 ## Hardware
 
@@ -42,7 +42,7 @@ The Proxmox host is a single point of failure for the entire lab.
 | Ansible — `nfs_provisioner` | Done | Dynamic provisioner, `nfs-client` as the default `StorageClass` |
 | Decision records | In progress | One file per decision, under `docs/decisions/` |
 | `LoadBalancer` addresses | Done | Cilium LB-IPAM over `192.168.1.210`–`.220`, announced by ARP |
-| Observability | Not started | Deferred because of the available memory |
+| Ansible — `monitoring` | Done | `kube-prometheus-stack`, Prometheus on a `local` PV, Grafana on `192.168.1.210` |
 
 ## Limitations
 
@@ -74,10 +74,10 @@ homelab/
     ├── inventory.yml       four hosts, written by hand
     ├── group_vars/         all, k8s_cluster, storage
     ├── requirements.yml    pinned Ansible collections
-    ├── site.yml            seven plays, in dependency order
+    ├── site.yml            eight plays, in dependency order
     ├── checks.yml          read-only verification, safe at any time
-    └── roles/              common, nfs_server, kube_prereq,
-                            control_plane, cilium, worker, nfs_provisioner
+    └── roles/              common, nfs_server, kube_prereq, control_plane,
+                            helm, cilium, worker, nfs_provisioner, monitoring
 ```
 
 ## Prerequisites
@@ -139,7 +139,7 @@ idempotent: a second run on a healthy cluster reports `changed=0` on every host.
 - [docs/architecture.md](docs/architecture.md) — the layers, the four machines, the
   two networks, the address plan, the sizing, and what runs inside the cluster.
 - [docs/provisioning.md](docs/provisioning.md) — how the system is built: the manual
-  prerequisites, what Terraform does, the seven Ansible plays and why they are in
+  prerequisites, what Terraform does, the eight Ansible plays and why they are in
   that order.
 - [docs/decisions/](docs/decisions/) — architecture decision records: why things are
   the way they are, one decision per file.

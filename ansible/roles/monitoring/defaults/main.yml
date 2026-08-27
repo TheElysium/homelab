@@ -1,0 +1,78 @@
+---
+monitoring_chart_version: 88.5.4
+monitoring_namespace: monitoring
+
+# Prometheus memory-maps its blocks and needs POSIX semantics, which the
+# nfs-client StorageClass cannot give it. See
+# docs/decisions/0004-prometheus-on-a-local-persistentvolume.md.
+monitoring_storage_node: k8s-worker-2
+monitoring_local_path: /var/lib/k8s-local/prometheus
+# The chart's defaults for the Prometheus pod. The directory is created with
+# them so the volume is usable whether or not the kubelet applies fsGroup.
+monitoring_local_owner: "1000"
+monitoring_local_group: "2000"
+
+monitoring_storage_class: local-storage
+monitoring_volume_size: 10Gi
+monitoring_retention: 15d
+# Below the volume, so retention is enforced before the filesystem fills.
+monitoring_retention_size: 8GiB
+
+monitoring_grafana_ip: 192.168.1.210
+monitoring_grafana_secret: grafana-admin
+
+monitoring_addon_dir: /etc/kubernetes/addons
+monitoring_storage_manifest: "{{ monitoring_addon_dir }}/prometheus-local-storage.yaml"
+
+monitoring_rollout_timeout: 600s
+
+# Set in an ansible-vault file; the chart's default password is public.
+monitoring_grafana_admin_password: "{{ grafana_admin_password }}"
+
+monitoring_values:
+  # Replaced by Cilium, so the chart would monitor something that does not
+  # exist. See docs/decisions/0002-replace-kube-proxy-with-cilium.md.
+  kubeProxy:
+    enabled: false
+
+  # No notification destination to route to. The alerting rules are evaluated
+  # by Prometheus regardless and stay visible in its UI and in Grafana.
+  alertmanager:
+    enabled: false
+
+  # Static pods on the control plane are not labelled for the chart's service
+  # selectors, so the endpoints are declared rather than discovered.
+  kubeControllerManager:
+    endpoints: ["{{ kube_apiserver_endpoint }}"]
+  kubeScheduler:
+    endpoints: ["{{ kube_apiserver_endpoint }}"]
+  kubeEtcd:
+    endpoints: ["{{ kube_apiserver_endpoint }}"]
+
+  prometheus:
+    prometheusSpec:
+      retention: "{{ monitoring_retention }}"
+      retentionSize: "{{ monitoring_retention_size }}"
+      # Without this the chart only picks up ServiceMonitors carrying its own
+      # release label, which silently ignores anything added later by hand.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: "{{ monitoring_storage_class }}"
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: "{{ monitoring_volume_size }}"
+
+  grafana:
+    # Read from a Secret this role writes, so no password passes through the
+    # values and the deploy task needs no no_log to hide its own failures.
+    admin:
+      existingSecret: "{{ monitoring_grafana_secret }}"
+    service:
+      type: LoadBalancer
+      annotations:
+        # Cilium's LB IPAM honours this; spec.loadBalancerIP is deprecated.
+        lbipam.cilium.io/ips: "{{ monitoring_grafana_ip }}"

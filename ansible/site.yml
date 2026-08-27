@@ -67,3 +67,12 @@
   tags: [storage, nfs_provisioner]
   roles:
     - nfs_provisioner
+
+- name: Deploy the monitoring stack
+  hosts: control_plane
+  become: true
+  # After nfs_provisioner only for readability; the local PersistentVolume it
+  # uses is unrelated to the NFS StorageClass.
+  tags: [monitoring]
+  roles:
+    - monitoring

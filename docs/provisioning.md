@@ -25,7 +25,7 @@ flowchart LR
     end
 
     subgraph ANS["Ansible — site.yml"]
-        PLAYS["7 plays<br/>7 roles"]
+        PLAYS["8 plays<br/>9 roles"]
     end
 
     PVE --> IMG --> SNIP --> VM --> BOOT --> PLAYS --> OUT["3-node cluster<br/>+ default StorageClass"]
@@ -124,7 +124,9 @@ produce intermittent failures that are unpleasant to diagnose.
 
 ## Ansible
 
-Run Ansible from a Linux control machine.
+Run Ansible from a Linux control machine, with the `ansible/` directory as the
+working directory. Every command below is relative to it, `ansible.cfg` is only
+picked up there, and a `group_vars` file created anywhere else is silently ignored.
 
 ### The inventory is static
 
@@ -142,7 +144,8 @@ flowchart TB
     end
 
     subgraph GV["group_vars"]
-        ALL["all.yml<br/>timezone, internal_iface, lan_iface<br/>nfs_server_ip, nfs_export_path"]
+        ALL["all/main.yml<br/>timezone, internal_iface, lan_iface<br/>nfs_server_ip, nfs_export_path"]
+        VAULT["all/vault.yml — ansible-vault<br/>grafana_admin_password"]
         K8S["k8s_cluster.yml<br/>kubernetes_version, CIDRs<br/>kube_apiserver_endpoint"]
         STO["storage.yml<br/>data device, export options"]
     end
@@ -152,11 +155,11 @@ flowchart TB
     INV -.->|hostvars| GV
 ```
 
-Two variables in `all.yml` are derived from inventory data. `nfs_server_ip` comes from
+Two variables in `all/main.yml` are derived from inventory data. `nfs_server_ip` comes from
 `hostvars[groups['storage'][0]].internal_ip`, and `kube_apiserver_endpoint` from
 the control-plane host. This keeps the server and mount addresses consistent.
 
-### The seven plays
+### The eight plays
 
 Collections first — the run fails at parse time without them:
 
@@ -164,8 +167,25 @@ Collections first — the run fails at parse time without them:
 ansible-galaxy collection install -r requirements.yml
 ```
 
+One value is not in the repository. Grafana's admin password lives in an
+`ansible-vault` file that has to be created once:
+
 ```bash
-ansible-playbook site.yml
+ansible-vault create group_vars/all/vault.yml
+```
+
+It holds a single key, `grafana_admin_password`. The `monitoring` role asserts its
+presence before doing anything, so a missing vault stops the play with a message
+rather than deploying an unreachable Grafana. The role writes the value into a
+Kubernetes Secret and points the chart at it, rather than passing it through the
+Helm values, which keeps the password out of the deploy task and its diagnostics.
+
+`vault.yml` is gitignored. An encrypted vault would be safe to commit, but the rule
+matches the one already applied to keys and Terraform state: one forgotten
+`--encrypt` and the password is in the history.
+
+```bash
+ansible-playbook site.yml --ask-vault-pass
 ```
 
 ```mermaid
@@ -177,8 +197,9 @@ flowchart TB
     P5["5 · control_plane → cilium<br/>Helm release, LB pool, L2 policy"]
     P6["6 · worker → worker<br/>kubeadm join"]
     P7["7 · control_plane → nfs_provisioner<br/>Deployment + default StorageClass"]
+    P8["8 · control_plane → monitoring<br/>local PV, kube-prometheus-stack"]
 
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8
     P6 -.->|"needs a schedulable node"| P7
     P5 -.->|"no node is Ready without a CNI"| P6
     P4 -.->|"mints the join token"| P6
@@ -231,6 +252,20 @@ refuse to run twice and are not idempotent, so both are gated on a `stat` of the
 file kubeadm writes *last* — `admin.conf` for the control plane, `kubelet.conf`
 for a worker. Their presence indicates that the previous command completed.
 
+**Reconcile both representations of a kubeadm setting.** kubeadm reads its
+configuration once, at `init`. A running cluster carries the resulting arguments in
+the static manifests under `/etc/kubernetes/manifests/`, and never looks at the
+config file again. A setting that must hold on an existing cluster *and* survive a
+rebuild therefore has to be written twice: in `kubeadm-config.yaml.j2`, and by a
+`replace` on the manifest. The control-plane metrics ports are the current example.
+The second task is a no-op on a fresh cluster, and the pair is what keeps the two
+from drifting apart unnoticed.
+
+The kubelet watches that directory and restarts the component on its own, so no
+handler is needed — but the restart is real. Editing `etcd.yaml` takes the API
+server down with it for a few seconds on a single-control-plane cluster, which is
+why the role ends by polling `/readyz`.
+
 **Write the final content, do not fetch and patch it.** The control plane ends by
 installing `admin.conf` on the control station, with its `server:` address rewritten
 from the internal network address to the LAN address, which is in the certificate
@@ -249,16 +284,22 @@ tasks set `changed_when` on the presence of `created` or `configured` in stdout 
 objects that did not move come back as `unchanged`.
 
 **Let Helm report its own changes.** `kubernetes.core.helm` compares the values
-it is given against the installed release, so the `cilium` role needs no
-`changed_when` of its own. This is the one component that does not follow the
+it is given against the installed release, so the `cilium` and `monitoring` roles
+need no `changed_when` of their own. This is the one component that does not follow the
 `kubectl apply` pattern above; [ADR-0003](decisions/0003-helm-as-the-deployment-channel.md)
 records why.
 
 That comparison is only reliable with the `helm diff` plugin installed. The
 module's own words: the default idempotency check *"can fail to report changes
 when `release_state` is set to `present` and `chart_repo_url` is defined"* — both
-of which this role does. The plugin is therefore installed by the role, before
-the release, and the `changed=0` claim at the top of `site.yml` depends on it.
+of which both roles do. The binary and the plugin are therefore installed by a
+`helm` role that the two declare as a dependency, and the `changed=0` claim above
+depends on it.
+
+That role is also why neither pins its own helm version. Two pins would drift, and
+a guard on the binary's *path* would keep the old binary after a bump; the role
+compares the output of `helm version --short`, so raising `helm_version` actually
+replaces it.
 
 **Wait for the CRDs, not for the operator.** `CiliumLoadBalancerIPPool` and
 `CiliumL2AnnouncementPolicy` are registered by the operator at runtime; the chart

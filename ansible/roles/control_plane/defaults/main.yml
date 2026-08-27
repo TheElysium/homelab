@@ -9,3 +9,23 @@ control_plane_cert_sans:
 # Outside the repository on purpose: it carries cluster-admin credentials, and
 # the Windows mount cannot express mode 0600.
 control_plane_local_kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/config"
+
+# kubeadm binds these to loopback. The template above covers a rebuild; the
+# static manifests of a running cluster have to be reconciled separately,
+# because kubeadm reads its configuration once, at init.
+control_plane_metrics_endpoints:
+  - manifest: kube-controller-manager.yaml
+    regexp: '--bind-address=127\.0\.0\.1'
+    replace: "--bind-address=0.0.0.0"
+    port: 10257
+  - manifest: kube-scheduler.yaml
+    regexp: '--bind-address=127\.0\.0\.1'
+    replace: "--bind-address=0.0.0.0"
+    port: 10259
+  - manifest: etcd.yaml
+    regexp: '--listen-metrics-urls=http://127\.0\.0\.1:2381'
+    replace: "--listen-metrics-urls=http://0.0.0.0:2381"
+    port: 2381
+
+control_plane_manifest_dir: /etc/kubernetes/manifests
+control_plane_metrics_timeout: 120

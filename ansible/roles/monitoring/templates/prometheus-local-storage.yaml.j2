@@ -1,0 +1,34 @@
+{{ ansible_managed | comment }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ monitoring_storage_class }}
+provisioner: kubernetes.io/no-provisioner
+# Binding before the scheduler has picked a node would let the pod land where
+# the directory does not exist.
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus-local
+spec:
+  capacity:
+    storage: {{ monitoring_volume_size }}
+  accessModes:
+    - ReadWriteOnce
+  # Retain, not Delete: nothing would recreate the directory, and a deleted
+  # claim would otherwise leave an unusable volume behind.
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ monitoring_storage_class }}
+  local:
+    path: {{ monitoring_local_path }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ monitoring_storage_node }}

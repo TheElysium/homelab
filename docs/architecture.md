@@ -6,7 +6,8 @@ is built.
 
 The cluster has three `Ready` nodes running Kubernetes v1.35.7. Cilium provides the
 pod network and announces `LoadBalancer` addresses on the LAN. A default
-`StorageClass` backed by NFS provisions volumes on demand. Observability is planned.
+`StorageClass` backed by NFS provisions volumes on demand. Prometheus and Grafana
+collect and display the cluster's own metrics.
 
 ## Layers
 
@@ -155,7 +156,8 @@ LAN, `192.168.1.0/24`:
 | `192.168.1.202` | `k8s-worker-2` |
 | `192.168.1.203` | `nfs-server` |
 | `192.168.1.204` – `.209` | Reserved for future nodes |
-| `192.168.1.210` – `.220` | Reserved, unused — see below |
+| `192.168.1.210` | Grafana, pinned via `lbipam.cilium.io/ips` |
+| `192.168.1.211` – `.220` | `LoadBalancer` pool — see below |
 
 Cluster-internal, `10.0.10.0/24`:
 
@@ -238,10 +240,17 @@ The export uses `no_root_squash`, so root on any machine in `10.0.10.0/24` is ro
 on the data. This is acceptable only because the segment is isolated and has no
 gateway.
 
+Two decisions rest on that same isolation. The second is etcd's metrics port, 2381,
+which carries no authentication and is bound to the internal address so Prometheus
+can reach it. Anything that gives `10.0.10.0/24` a route to the LAN invalidates
+both at once. See
+[ADR-0005](decisions/0005-expose-control-plane-metrics-on-the-internal-network.md).
+
 **Certificates expire on 17 August 2027** — kubeadm's one-year default for leaf
 certificates, ten years for the CAs. Nothing in the build renews them.
 
-**Observability is not installed.** See the memory budget below.
+**Grafana has a single admin account**, its password held in
+`ansible/group_vars/all/vault.yml`. The service is published on the LAN with no TLS.
 
 ## Sizing
 
@@ -282,8 +291,9 @@ Ballooning redistributes idle memory with a reaction delay; it does not create
 memory. Under simultaneous pressure from all four machines it saves nothing, so the
 2 GB margin is a real physical reserve.
 
-Prometheus, Grafana, and Loki together would consume most of that margin. They are
-planned for a later phase, one component at a time with explicit resource limits.
+`kube-prometheus-stack` runs on that margin, which is why it is installed without
+Alertmanager and without Loki. Prometheus is the component to watch: its footprint
+grows with the number of distinct time series, not with the size of the cluster.
 
 It is also why `nfs-subdir-external-provisioner` was chosen over the actively
 maintained `csi-driver-nfs`: the latter is a controller plus a DaemonSet plus five
