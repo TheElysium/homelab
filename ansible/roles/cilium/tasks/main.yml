@@ -1,4 +1,52 @@
 ---
+- name: Create the addon manifest directory
+  ansible.builtin.file:
+    path: "{{ cilium_addon_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download the Gateway API CRDs
+  # The chart does not carry the CRDs, and its rendered GatewayClass needs the
+  # API served before the release applies.
+  ansible.builtin.get_url:
+    url: "{{ cilium_gateway_api_crds_url }}"
+    dest: "{{ cilium_gateway_crds_manifest }}"
+    checksum: "sha256:{{ cilium_gateway_api_crds_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the Gateway API CRDs
+  # The bundle's ValidatingAdmissionPolicy reports "configured" on every
+  # apply; only the CRD lines mean a real change.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ cilium_gateway_crds_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_gateway_crds_apply
+  changed_when: >-
+    cilium_gateway_crds_apply.stdout
+    is search('apiextensions\.k8s\.io/[^ ]+ (created|configured)')
+
+- name: Wait for the Gateway API CRDs to be established
+  # Applied CRDs report Established only once the API server has served them;
+  # applying the release's GatewayClass before that fails with "no matches".
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=established --timeout=60s
+      crd/gatewayclasses.gateway.networking.k8s.io
+      crd/gateways.gateway.networking.k8s.io
+      crd/httproutes.gateway.networking.k8s.io
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_gateway_crd_wait
+  until: cilium_gateway_crd_wait is succeeded
+  retries: 12
+  delay: 5
+  changed_when: false
+
 - name: Deploy Cilium
   kubernetes.core.helm:
     name: cilium
@@ -29,14 +77,6 @@
   delay: 5
   changed_when: false
 
-- name: Create the addon manifest directory
-  ansible.builtin.file:
-    path: "{{ cilium_addon_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
 - name: Write the load-balancer manifest
   ansible.builtin.template:
     src: cilium-lb.yaml.j2
@@ -55,6 +95,41 @@
   changed_when: >-
     'created' in cilium_lb_apply.stdout
     or 'configured' in cilium_lb_apply.stdout
+
+- name: Write the shared Gateway manifest
+  ansible.builtin.template:
+    src: cilium-gateway.yaml.j2
+    dest: "{{ cilium_gateway_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the shared Gateway manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ cilium_gateway_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_gateway_apply
+  changed_when: >-
+    'created' in cilium_gateway_apply.stdout
+    or 'configured' in cilium_gateway_apply.stdout
+
+- name: Wait for the Gateway to become programmed
+  # Programmed means the LB Service exists and LB-IPAM assigned the pinned
+  # address; the first pass can race the operator, hence the retries.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=programmed
+      gateway/{{ cilium_gateway_name }} -n {{ cilium_gateway_namespace }}
+      --timeout={{ cilium_gateway_wait_timeout }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_gateway_wait
+  until: cilium_gateway_wait is succeeded
+  retries: 12
+  delay: 5
+  changed_when: false
 
 - name: Wait for the node to become Ready
   # Nothing before the CNI can make it Ready, which is why this lives here and

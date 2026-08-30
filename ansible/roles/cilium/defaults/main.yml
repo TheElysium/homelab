@@ -31,6 +31,12 @@ cilium_values:
     replicas: 1
   hubble:
     enabled: false
+  # Gateway API on the agents' embedded Envoy (ADR-0007). The chart renders
+  # the GatewayClass (create: true), so the CRDs go in before the release.
+  gatewayAPI:
+    enabled: true
+    gatewayClass:
+      create: true
 
 cilium_lb_pool_start: 192.168.1.210
 cilium_lb_pool_stop: 192.168.1.220
@@ -43,5 +49,23 @@ cilium_l2_interfaces:
 cilium_addon_dir: /etc/kubernetes/addons
 cilium_lb_manifest: "{{ cilium_addon_dir }}/cilium-lb.yaml"
 
+# Cilium 1.20 requires Gateway API v1.6.1 minimum; the bundle is pinned
+# beside cilium_version and applied from the addon dir like every manifest.
+cilium_gateway_api_version: v1.6.1
+# sha256 of the bundle above; bump it with the version.
+cilium_gateway_api_crds_sha256: 24d931f22abd8e40c973264319ead7cfa09d0fb7716b7ab1ee2ff174cb063a73
+cilium_gateway_api_crds_url: >-
+  https://github.com/kubernetes-sigs/gateway-api/releases/download/{{
+  cilium_gateway_api_version }}/standard-install.yaml
+cilium_gateway_crds_manifest: "{{ cilium_addon_dir }}/gateway-api-crds.yaml"
+
+# One shared Gateway for every app; HTTPRoutes attach to it and are told
+# apart by hostname (*.homelab.internal).
+cilium_gateway_namespace: gateway-system
+cilium_gateway_name: homelab
+cilium_gateway_lb_ip: 192.168.1.212
+cilium_gateway_manifest: "{{ cilium_addon_dir }}/cilium-gateway.yaml"
+
+cilium_gateway_wait_timeout: 120s
 cilium_rollout_timeout: 300s
 cilium_node_ready_timeout: 300s

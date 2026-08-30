@@ -1,8 +1,11 @@
 ---
-# Read-only. Every assertion here must hold both before and after the roles run;
-# anything only true afterwards belongs to the role, not here.
+# Read-only. Every host assertion here must hold both before and after the
+# roles run; anything only true afterwards belongs to the role, not here.
 #
 #   ansible-playbook checks.yml
+#
+# The cluster-object plays at the end only hold once site.yml has built the
+# cluster; against a bare machine only the host plays above can pass.
 
 - name: Verify inventory data against the running machines
   hosts: all
@@ -101,3 +104,44 @@
         success_msg: >-
           {{ nfs_data_device }}:
           {{ data_device_fstype.stdout | trim | default('blank', true) }}
+
+- name: Verify the shared Gateway
+  hosts: control_plane
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Read the Programmed condition of the shared Gateway
+      # Name, namespace and address mirror roles/cilium/defaults/main.yml;
+      # failed_when: false so the assert below is what reports.
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get gateway homelab -n gateway-system
+          -o 'jsonpath={.status.conditions[?(@.type=="Programmed")].status}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      changed_when: false
+      failed_when: false
+      register: gateway_programmed
+
+    - name: Read the address assigned to the shared Gateway
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get gateway homelab -n gateway-system
+          -o jsonpath={.status.addresses[0].value}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      changed_when: false
+      failed_when: false
+      register: gateway_address
+
+    - name: The shared Gateway is programmed on the pinned address
+      ansible.builtin.assert:
+        that:
+          - gateway_programmed.stdout == 'True'
+          - gateway_address.stdout == '192.168.1.212'
+        fail_msg: >-
+          Gateway homelab/gateway-system is absent, not programmed, or not on
+          192.168.1.212. The cilium role creates it; run ansible-playbook
+          site.yml --tags cilium.
+        success_msg: "homelab/gateway-system: {{ gateway_address.stdout }}"

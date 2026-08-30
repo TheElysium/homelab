@@ -1,0 +1,20 @@
+{{ ansible_managed | comment }}
+#
+# Exposes the stack's Grafana through the shared cluster Gateway (ADR-0007).
+# Name and namespace mirror roles/cilium/defaults/main.yml.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: monitoring-grafana
+  namespace: {{ monitoring_namespace }}
+spec:
+  parentRefs:
+    - name: homelab
+      namespace: gateway-system
+      sectionName: http
+  hostnames:
+    - {{ monitoring_grafana_hostname }}
+  rules:
+    - backendRefs:
+        - name: {{ monitoring_grafana_service }}
+          port: 80

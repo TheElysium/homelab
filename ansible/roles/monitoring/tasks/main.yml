@@ -100,3 +100,22 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   changed_when: false
+
+- name: Write the Grafana Gateway route manifest
+  ansible.builtin.template:
+    src: monitoring-grafana-route.yaml.j2
+    dest: "{{ monitoring_route_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the Grafana Gateway route manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ monitoring_route_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: monitoring_route_apply
+  changed_when: >-
+    'created' in monitoring_route_apply.stdout
+    or 'configured' in monitoring_route_apply.stdout

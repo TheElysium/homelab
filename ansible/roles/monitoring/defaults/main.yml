@@ -20,9 +20,14 @@ monitoring_retention_size: 8GiB
 
 monitoring_grafana_ip: 192.168.1.210
 monitoring_grafana_secret: grafana-admin
+monitoring_grafana_service: kube-prometheus-stack-grafana
+# Served through the shared Gateway; the LoadBalancer address stays until
+# retired, both paths work in parallel.
+monitoring_grafana_hostname: monitoring.homelab.internal
 
 monitoring_addon_dir: /etc/kubernetes/addons
 monitoring_storage_manifest: "{{ monitoring_addon_dir }}/prometheus-local-storage.yaml"
+monitoring_route_manifest: "{{ monitoring_addon_dir }}/monitoring-grafana-route.yaml"
 
 monitoring_rollout_timeout: 600s
 

@@ -1,0 +1,29 @@
+{{ ansible_managed | comment }}
+#
+# One shared Gateway for the cluster; apps attach HTTPRoutes, told apart by
+# hostname (ADR-0007).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ cilium_gateway_namespace }}
+---
+# The GatewayClass is not here on purpose: the chart renders it (with
+# gatewayAPI.gatewayClass.create=true), so Helm owns it per ADR-0003.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ cilium_gateway_name }}
+  namespace: {{ cilium_gateway_namespace }}
+  annotations:
+    # Pinned in the lan pool; the operator propagates this prefix by default.
+    lbipam.cilium.io/ips: "{{ cilium_gateway_lb_ip }}"
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      # Apps attach routes from any namespace; unmatched hostnames get a 404.
+      allowedRoutes:
+        namespaces:
+          from: All

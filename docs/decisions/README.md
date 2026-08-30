@@ -57,3 +57,4 @@ even if the title turns out to be a poor one.
 | [ADR-0004 — Prometheus on a local PersistentVolume](0004-prometheus-on-a-local-persistentvolume.md) | `accepted` |
 | [ADR-0005 — Expose control-plane metrics on the internal network](0005-expose-control-plane-metrics-on-the-internal-network.md) | `accepted` |
 | [ADR-0006 — PostgreSQL on CloudNativePG with NFS storage](0006-postgresql-on-cloudnativepg-with-nfs-storage.md) | `accepted` |
+| [ADR-0007 — Gateway API as the shared ingress](0007-gateway-api-as-the-shared-ingress.md) | `accepted` |
