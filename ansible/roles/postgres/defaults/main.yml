@@ -25,6 +25,34 @@ postgres_addon_dir: /etc/kubernetes/addons
 postgres_cluster_manifest: "{{ postgres_addon_dir }}/postgres-cluster.yaml"
 postgres_dashboard_manifest: "{{ postgres_addon_dir }}/postgres-dashboard.yaml"
 
+# The t0 MCP server reads the training marts through its own role. The role
+# carries no memberships and no privileges of its own: its read access to
+# mart.* and core.threshold is granted by t0's migration 020, so a cluster
+# without that migration is a cluster the MCP cannot read from.
+postgres_t0_mcp_role: t0_mcp_ro
+# Matches the MCP server's own connection pool ceiling.
+postgres_t0_mcp_connection_limit: 4
+
+# Password holder for the role, in the postgres namespace. Type
+# kubernetes.io/basic-auth, as CNPG's declarative role management requires;
+# the cnpg.io/reload label makes the operator apply password changes from a
+# replay instead of waiting for its next reconciliation pass. CNPG generates
+# passwords for its reserved users, but not for managed roles, so this one is
+# ours.
+postgres_t0_mcp_password_secret: postgres-t0-mcp-ro
+
+# The DSN Secret the t0 chart mounts but never creates. The host is the
+# cluster's -rw service; the MCP only reads, but it is the conventional
+# endpoint, and there is no replica pool to prefer a -ro service for.
+postgres_t0_mcp_namespace: t0
+postgres_t0_mcp_database: t0
+postgres_t0_mcp_dsn_secret: t0-mcp-ro-dsn
+postgres_t0_mcp_dsn_key: dsn
+
+# Set in an ansible-vault file, like the Grafana admin password: it reaches
+# the cluster only through the two Secrets above and is never committed.
+postgres_t0_mcp_ro_password: "{{ t0_mcp_ro_password }}"
+
 # The Grafana sidecar ships with kube-prometheus-stack and picks up dashboard
 # ConfigMaps from its namespace by label.
 postgres_dashboard_namespace: monitoring

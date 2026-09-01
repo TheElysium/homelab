@@ -58,3 +58,4 @@ even if the title turns out to be a poor one.
 | [ADR-0005 — Expose control-plane metrics on the internal network](0005-expose-control-plane-metrics-on-the-internal-network.md) | `accepted` |
 | [ADR-0006 — PostgreSQL on CloudNativePG with NFS storage](0006-postgresql-on-cloudnativepg-with-nfs-storage.md) | `accepted` |
 | [ADR-0007 — Gateway API as the shared ingress](0007-gateway-api-as-the-shared-ingress.md) | `accepted` |
+| [ADR-0008 — A read-only role for the t0 MCP](0008-a-read-only-role-for-the-t0-mcp.md) | `accepted` |

@@ -46,3 +46,15 @@ spec:
     customQueriesConfigMap:
       - name: {{ postgres_cluster_name }}-monitoring
         key: queries
+  managed:
+    roles:
+      # Read-only identity for the t0 MCP server (see ADR-0008). No
+      # memberships: pg_read_all_data would also expose the raw ingest
+      # tables, and the read path on mart.* and core.threshold belongs to
+      # t0's migration 020, which fails loudly until this role exists.
+      - name: {{ postgres_t0_mcp_role }}
+        ensure: present
+        login: true
+        connectionLimit: {{ postgres_t0_mcp_connection_limit }}
+        passwordSecret:
+          name: {{ postgres_t0_mcp_password_secret }}

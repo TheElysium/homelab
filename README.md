@@ -44,7 +44,7 @@ The Proxmox host is a single point of failure for the entire lab.
 | Decision records | In progress | One file per decision, under `docs/decisions/` |
 | `LoadBalancer` addresses | Done | Cilium LB-IPAM over `192.168.1.210`–`.220`, announced by ARP |
 | Ansible — `monitoring` | Done | `kube-prometheus-stack`, Prometheus on a `local` PV, Grafana on `192.168.1.210` |
-| Ansible — `postgres` | Done | CloudNativePG operator, single-instance PostgreSQL cluster on `nfs-client`, PodMonitor + Grafana storage dashboard |
+| Ansible — `postgres` | Done | CloudNativePG operator, single-instance PostgreSQL cluster on `nfs-client`, PodMonitor + Grafana storage dashboard, read-only `t0_mcp_ro` role for the t0 MCP server |
 
 ## Limitations
 

@@ -54,6 +54,36 @@
   register: postgres_namespace_apply
   changed_when: "'created' in postgres_namespace_apply.stdout"
 
+- name: Check that the t0 MCP role password is defined
+  # CNPG does not generate passwords for managed roles; without this the role
+  # would be created with a NULL password and the MCP could never connect.
+  ansible.builtin.assert:
+    that: postgres_t0_mcp_ro_password is defined
+    fail_msg: >-
+      t0_mcp_ro_password is not defined. From the ansible directory, run
+      ansible-vault create group_vars/all/vault.yml, then replay with
+      --ask-vault-pass. A vault created anywhere else is not loaded.
+
+- name: Create the t0 MCP role password secret
+  # Applied before the Cluster manifest: the managed role references this
+  # secret by name, and creating the role against a missing secret would make
+  # the operator's first reconciliation fail on the password.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl create secret generic {{ postgres_t0_mcp_password_secret }}
+      -n {{ postgres_namespace }}
+      --type=kubernetes.io/basic-auth
+      --from-literal=username={{ postgres_t0_mcp_role }}
+      --from-literal=password='{{ postgres_t0_mcp_ro_password }}'
+      --dry-run=client -o yaml | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_t0_mcp_password_apply
+  changed_when: "'created' in postgres_t0_mcp_password_apply.stdout"
+  no_log: true
+
 - name: Write the cluster manifest
   ansible.builtin.template:
     src: postgres-cluster.yaml.j2
@@ -84,6 +114,39 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   changed_when: false
+
+- name: Create the t0 namespace
+  # The DSN secret lives where the t0 chart will mount it from. The namespace
+  # is created here rather than left to the chart, so the secret is in place
+  # before the first deploy of the release.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl create namespace {{ postgres_t0_mcp_namespace }}
+      --dry-run=client -o yaml | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_t0_namespace_apply
+  changed_when: "'created' in postgres_t0_namespace_apply.stdout"
+
+- name: Create the t0 MCP DSN secret
+  # The password is percent-encoded for the URI. Changing it in the vault and
+  # replaying rotates the database role (the password secret carries the
+  # cnpg.io/reload label) and this DSN in the same run.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl create secret generic {{ postgres_t0_mcp_dsn_secret }}
+      -n {{ postgres_t0_mcp_namespace }}
+      --from-literal={{ postgres_t0_mcp_dsn_key }}='postgresql://{{ postgres_t0_mcp_role }}:{{ postgres_t0_mcp_ro_password | urlencode }}@{{ postgres_cluster_name }}-rw.{{ postgres_namespace }}.svc:5432/{{ postgres_t0_mcp_database }}'
+      --dry-run=client -o yaml | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: postgres_t0_mcp_dsn_apply
+  changed_when: "'created' in postgres_t0_mcp_dsn_apply.stdout"
+  no_log: true
 
 - name: Write the Grafana dashboard manifest
   ansible.builtin.template:

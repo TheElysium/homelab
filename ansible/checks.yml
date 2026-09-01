@@ -145,3 +145,44 @@
           192.168.1.212. The cilium role creates it; run ansible-playbook
           site.yml --tags cilium.
         success_msg: "homelab/gateway-system: {{ gateway_address.stdout }}"
+
+- name: Verify the t0 MCP database access path
+  hosts: control_plane
+  gather_facts: false
+  become: true
+
+  tasks:
+    # Names mirror roles/postgres/defaults/main.yml; failed_when: false so the
+    # assert below is what reports.
+    - name: Read the reconciled managed roles of the PostgreSQL cluster
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get cluster postgres -n postgres
+          -o 'jsonpath={.status.managedRolesStatus.byStatus.reconciled}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      changed_when: false
+      failed_when: false
+      register: t0_mcp_role_reconciled
+
+    - name: Read the t0 MCP DSN secret
+      ansible.builtin.command:
+        cmd: kubectl get secret t0-mcp-ro-dsn -n t0
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      changed_when: false
+      failed_when: false
+      register: t0_mcp_dsn_secret
+
+    - name: The MCP role is reconciled and its DSN secret exists
+      ansible.builtin.assert:
+        that:
+          - "'t0_mcp_ro' in t0_mcp_role_reconciled.stdout"
+          - t0_mcp_dsn_secret.rc == 0
+        fail_msg: >-
+          The role t0_mcp_ro is not reconciled (status:
+          {{ t0_mcp_role_reconciled.stdout | default('cluster unreadable') }})
+          or secret t0-mcp-ro-dsn is missing from the t0 namespace. The
+          postgres role creates both; run ansible-playbook site.yml
+          --tags postgres --ask-vault-pass.
+        success_msg: "t0_mcp_ro reconciled, t0-mcp-ro-dsn present in t0"
