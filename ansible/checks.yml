@@ -181,7 +181,7 @@
           - t0_mcp_dsn_secret.rc == 0
         fail_msg: >-
           The role t0_mcp_ro is not reconciled (status:
-          {{ t0_mcp_role_reconciled.stdout | default('cluster unreadable') }})
+          {{ t0_mcp_role_reconciled.stdout | default('cluster unreadable', true) }})
           or secret t0-mcp-ro-dsn is missing from the t0 namespace. The
           postgres role creates both; run ansible-playbook site.yml
           --tags postgres --ask-vault-pass.

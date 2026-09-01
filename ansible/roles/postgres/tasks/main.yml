@@ -55,10 +55,11 @@
   changed_when: "'created' in postgres_namespace_apply.stdout"
 
 - name: Check that the t0 MCP role password is defined
-  # CNPG does not generate passwords for managed roles; without this the role
-  # would be created with a NULL password and the MCP could never connect.
+  # Assert on the vault variable itself, not on the default that wraps it:
+  # postgres_t0_mcp_ro_password is always defined as a template, so only the
+  # raw name proves the vault was loaded.
   ansible.builtin.assert:
-    that: postgres_t0_mcp_ro_password is defined
+    that: t0_mcp_ro_password is defined
     fail_msg: >-
       t0_mcp_ro_password is not defined. From the ansible directory, run
       ansible-vault create group_vars/all/vault.yml, then replay with
@@ -68,14 +69,18 @@
   # Applied before the Cluster manifest: the managed role references this
   # secret by name, and creating the role against a missing secret would make
   # the operator's first reconciliation fail on the password.
+  # The password is shell-escaped for the single-quoted argument; the vault
+  # value never reaches this task unescaped. The cnpg.io/reload label is what
+  # makes the operator apply a rotated password immediately on replay.
   ansible.builtin.shell:
     cmd: >-
       set -o pipefail &&
       kubectl create secret generic {{ postgres_t0_mcp_password_secret }}
       -n {{ postgres_namespace }}
       --type=kubernetes.io/basic-auth
+      --labels cnpg.io/reload=true
       --from-literal=username={{ postgres_t0_mcp_role }}
-      --from-literal=password='{{ postgres_t0_mcp_ro_password }}'
+      --from-literal=password='{{ t0_mcp_ro_password | replace("'", "'\\''") }}'
       --dry-run=client -o yaml | kubectl apply -f -
     executable: /bin/bash
   environment:

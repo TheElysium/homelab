@@ -145,7 +145,7 @@ flowchart TB
 
     subgraph GV["group_vars"]
         ALL["all/main.yml<br/>timezone, internal_iface, lan_iface<br/>nfs_server_ip, nfs_export_path"]
-        VAULT["all/vault.yml — ansible-vault<br/>grafana_admin_password"]
+        VAULT["all/vault.yml — ansible-vault<br/>grafana_admin_password, t0_mcp_ro_password"]
         K8S["k8s_cluster.yml<br/>kubernetes_version, CIDRs<br/>kube_apiserver_endpoint"]
         STO["storage.yml<br/>data device, export options"]
     end
@@ -174,11 +174,13 @@ One value is not in the repository. Grafana's admin password lives in an
 ansible-vault create group_vars/all/vault.yml
 ```
 
-It holds a single key, `grafana_admin_password`. The `monitoring` role asserts its
-presence before doing anything, so a missing vault stops the play with a message
-rather than deploying an unreachable Grafana. The role writes the value into a
-Kubernetes Secret and points the chart at it, rather than passing it through the
-Helm values, which keeps the password out of the deploy task and its diagnostics.
+It holds two keys, `grafana_admin_password` and `t0_mcp_ro_password`. The
+`monitoring` and `postgres` roles assert their presence before doing anything,
+so a missing vault stops the play with a message rather than deploying an
+unreachable Grafana or a database role that cannot log in. The roles write the
+values into Kubernetes Secrets and point the charts at them, rather than
+passing them through the Helm values, which keeps the passwords out of the
+deploy tasks and their diagnostics.
 
 `vault.yml` is gitignored. An encrypted vault would be safe to commit, but the rule
 matches the one already applied to keys and Terraform state: one forgotten

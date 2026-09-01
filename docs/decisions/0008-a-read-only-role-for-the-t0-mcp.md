@@ -99,10 +99,10 @@ asks for it once and every replay after that is unchanged.
 
 CNPG reconciles the role back to spec: an `ALTER ROLE` issued by hand against
 `t0_mcp_ro` (connection limit, login, memberships) is reverted on the next
-pass. A write grant granted by hand would be reverted too, but the database
-reconciliation is a backstop, not a security boundary — the invariant "no write
-grants on `t0_mcp_ro`, ever" is enforced by review, here and in t0's
-migrations.
+pass. Object-level grants are a different matter — a hand-issued
+`GRANT INSERT ON TABLE` is not role configuration and would survive, so the
+invariant "no write grants on `t0_mcp_ro`, ever" is enforced by review, here
+and in t0's migrations, not by the operator.
 
 The MCP connects over the `-rw` service even though it only reads. If a replica
 pool ever exists, switching the DSN host is a one-line default change away.
