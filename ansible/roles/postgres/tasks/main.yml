@@ -78,7 +78,6 @@
       kubectl create secret generic {{ postgres_t0_mcp_password_secret }}
       -n {{ postgres_namespace }}
       --type=kubernetes.io/basic-auth
-      --labels cnpg.io/reload=true
       --from-literal=username={{ postgres_t0_mcp_role }}
       --from-literal=password='{{ t0_mcp_ro_password | replace("'", "'\\''") }}'
       --dry-run=client -o yaml
