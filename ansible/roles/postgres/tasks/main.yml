@@ -87,7 +87,11 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: postgres_t0_mcp_password_apply
-  changed_when: "'created' in postgres_t0_mcp_password_apply.stdout"
+  # 'configured' matters: it is what a password rotation (vault edit + replay)
+  # reports through apply, and it must be seen as a change.
+  changed_when: >-
+    'created' in postgres_t0_mcp_password_apply.stdout
+    or 'configured' in postgres_t0_mcp_password_apply.stdout
   no_log: true
 
 - name: Write the cluster manifest
@@ -151,7 +155,10 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: postgres_t0_mcp_dsn_apply
-  changed_when: "'created' in postgres_t0_mcp_dsn_apply.stdout"
+  # Same as the password secret: a rotation reports 'configured', not 'created'.
+  changed_when: >-
+    'created' in postgres_t0_mcp_dsn_apply.stdout
+    or 'configured' in postgres_t0_mcp_dsn_apply.stdout
   no_log: true
 
 - name: Write the Grafana dashboard manifest

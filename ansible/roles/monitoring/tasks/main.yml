@@ -67,13 +67,17 @@
       kubectl create secret generic {{ monitoring_grafana_secret }}
       -n {{ monitoring_namespace }}
       --from-literal=admin-user=admin
-      --from-literal=admin-password='{{ monitoring_grafana_admin_password }}'
+      --from-literal=admin-password='{{ grafana_admin_password | replace("'", "'\\''") }}'
       --dry-run=client -o yaml | kubectl apply -f -
     executable: /bin/bash
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: monitoring_secret_apply
-  changed_when: "'created' in monitoring_secret_apply.stdout"
+  # A password change in the vault reports 'configured' through apply, and
+  # must be seen as a change.
+  changed_when: >-
+    'created' in monitoring_secret_apply.stdout
+    or 'configured' in monitoring_secret_apply.stdout
   no_log: true
 
 - name: Deploy kube-prometheus-stack
