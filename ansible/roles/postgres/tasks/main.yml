@@ -81,7 +81,9 @@
       --labels cnpg.io/reload=true
       --from-literal=username={{ postgres_t0_mcp_role }}
       --from-literal=password='{{ t0_mcp_ro_password | replace("'", "'\\''") }}'
-      --dry-run=client -o yaml | kubectl apply -f -
+      --dry-run=client -o yaml
+      | kubectl label --local -f - cnpg.io/reload=true -o yaml
+      | kubectl apply -f -
     executable: /bin/bash
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
