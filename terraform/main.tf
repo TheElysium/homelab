@@ -25,7 +25,10 @@ locals {
   datastore_images = "local"     # cloud image + cloud-init snippets
   datastore_disks  = "local-lvm" # VM disks (LVM-thin)
 
-  image_url  = "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
+  # Pinned to a dated build: the "latest" alias drifts upstream and its size
+  # change forced a datastore replace on every plan (content_id). Bump to a
+  # new dated directory deliberately.
+  image_url  = "https://cloud.debian.org/images/cloud/trixie/20260831-2587/debian-13-genericcloud-amd64-20260831-2587.qcow2"
   cloud_user = "debian"
 
   lan_bridge  = "vmbr0"
@@ -41,7 +44,10 @@ locals {
       vm_id         = 200
       cpu_cores     = 2 # kubeadm minimum
       memory_mb     = 3072
-      memory_min    = 2048
+      # Equal to memory_mb: kube-apiserver alone uses ~1.1 GB, the balloon
+      # squeezing the VM to its previous 2048 MB minimum left MemAvailable
+      # below 100 MB and triggered NodeMemoryHighUtilization.
+      memory_min    = 3072
       disk_gb       = 20
       data_disk_gb  = 0
       lan_cidr      = "192.168.1.200/24"
@@ -89,8 +95,11 @@ resource "proxmox_download_file" "debian-13-genericcloud_image" {
   datastore_id = local.datastore_images
   node_name    = local.node_name
   url          = local.image_url
-  file_name    = "debian-13-genericcloud-amd64.qcow2"
-  overwrite    = true
+  file_name    = "debian-13-genericcloud-amd64-20260831-2587.qcow2"
+  # overwrite=false: once the image exists on the datastore, updates to the
+  # upstream "latest" build must not drag every VM into a plan (import_from
+  # churn). Bump the URL deliberately instead.
+  overwrite    = false
 }
 
 resource "proxmox_virtual_environment_file" "cloud_config" {
