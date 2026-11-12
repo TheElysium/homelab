@@ -75,9 +75,10 @@ Gateway API served by Cilium's embedded Envoy, with one shared Gateway:
   the t0 migration behind this Gateway, together with the stray one-IP
   `homelab-lan` pool that reserved it.
 - Applications attach HTTPRoutes with their `hostnames` pinned — the
-  convention is `*.homelab.internal`, resolved to 192.168.1.212 by a wildcard
-  record at the router. A request for a hostname no route claims is answered
-  404 by Envoy; nothing falls through to another app.
+  convention is `*.homelab.internal`, each name mapped to 192.168.1.212 by a
+  line in the `hosts` file of every client machine; the router holds no record
+  for the domain. A request for a hostname no route claims is answered 404 by
+  Envoy; nothing falls through to another app.
 
 The frontend/backend split cadence needs is its own HTTPRoute: a
 `PathPrefix /api` match forwarded to the backend with `URLRewrite`
@@ -95,13 +96,15 @@ the datapath lives in the Cilium agents already running on every node, and
 upgrades of the ingress are upgrades of Cilium.
 
 The pool cost of an HTTP app drops to zero addresses: a new app is an
-HTTPRoute plus a DNS name under the wildcard. The eleven-address pool stays
+HTTPRoute plus a name under `homelab.internal`. The eleven-address pool stays
 free for services that genuinely need their own address.
 
-Routing is by hostname, so DNS becomes part of deploying an app: the wildcard
-record exists once, but a router without it leaves the whole convention
-unreachable. Bare `192.168.1.212` answers 404 for anything that is not claimed
-by a route's hostname.
+Routing is by hostname, so name resolution becomes part of deploying an app:
+each new hostname needs a `hosts` line on every machine that browses to it,
+added by hand outside this repository. On Windows, WSL resolves through the
+Windows resolver and picks up the same file. A wildcard record at the router
+would replace all of these lines with one. Bare `192.168.1.212` answers 404 for
+anything that is not claimed by a route's hostname.
 
 Gateway API CRDs upgrade ahead of the cluster: they are cluster-scoped and
 applied by hand here, so bumping `cilium_gateway_api_version` is part of the
