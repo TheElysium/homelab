@@ -61,6 +61,8 @@ homelab/
 ├── .gitignore              state files, tfvars and SSH material are excluded
 ├── .gitattributes          LF line endings, enforced at commit time
 ├── .editorconfig           LF line endings, enforced in the editor
+├── .gates.yml              lint, syntax and security checks run before a commit
+├── .gitleaksignore         reviewed gitleaks false positives
 ├── docs/
 │   ├── architecture.md     what the system is made of
 │   ├── provisioning.md     how it is built, and in which order
@@ -78,6 +80,7 @@ homelab/
     ├── requirements.yml    pinned Ansible collections
     ├── site.yml            nine plays, in dependency order
     ├── checks.yml          read-only verification, safe at any time
+    ├── tools/              offline manifest rendering for kube-linter
     └── roles/              common, nfs_server, kube_prereq, control_plane,
                             helm, cilium, worker, nfs_provisioner, monitoring,
                             postgres

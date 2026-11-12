@@ -57,3 +57,7 @@ desktop.ini
 *~
 .idea/
 .vscode/
+
+# --- Local agent tooling ---
+.claude/settings.local.json
+.usage/

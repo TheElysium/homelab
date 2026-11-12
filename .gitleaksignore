@@ -1,0 +1,2 @@
+# cilium_gateway_api_crds_sha256: the public checksum of the Gateway API bundle.
+2d632030ecbbad0d7a800b5db46a3d7e32e69c73:ansible/roles/cilium/defaults/main.yml:generic-api-key:56

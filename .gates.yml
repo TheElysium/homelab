@@ -1,0 +1,6 @@
+stack: ansible
+# Run from the repository root: wsl starts in the current Windows directory.
+lint: wsl -d Ubuntu -- bash -lc "cd ansible && ansible-lint"
+typecheck: wsl -d Ubuntu -- bash -lc "cd ansible && ansible-playbook site.yml checks.yml --syntax-check"
+# No build or test step: the only execution is a run against the live cluster, done by hand.
+sast: wsl -d Ubuntu -- bash -lc "gitleaks git . --no-banner --redact && gitleaks git . --pre-commit --no-banner --redact && gitleaks git . --pre-commit --staged --no-banner --redact && cd ansible && rm -rf /tmp/homelab-manifests && ansible-playbook -i localhost, tools/render-manifests.yml -e render_dir=/tmp/homelab-manifests && kube-linter lint /tmp/homelab-manifests"

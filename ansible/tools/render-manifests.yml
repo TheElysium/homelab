@@ -1,0 +1,58 @@
+---
+# Offline: renders the Kubernetes manifest templates for kube-linter. Kept out
+# of the ansible directory so its group_vars, and so the vault, are not loaded.
+#
+#   ansible-playbook -i localhost, tools/render-manifests.yml -e render_dir=/tmp/manifests
+#   kube-linter lint /tmp/manifests
+
+- name: Render the Kubernetes manifests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    render_root: "{{ playbook_dir }}/.."
+    render_roles:
+      - cilium
+      - monitoring
+      - nfs_provisioner
+      - postgres
+
+  tasks:
+    - name: Check that the output directory is set
+      ansible.builtin.assert:
+        that: render_dir is defined
+
+    - name: Load the shared variables
+      ansible.builtin.include_vars:
+        file: "{{ render_root }}/{{ item }}"
+      loop:
+        - group_vars/all/main.yml
+        - group_vars/k8s_cluster.yml
+
+    - name: Load the role defaults
+      ansible.builtin.include_vars:
+        file: "{{ render_root }}/roles/{{ item }}/defaults/main.yml"
+      loop: "{{ render_roles }}"
+
+    - name: Stand in for the addresses read from the inventory
+      # TEST-NET-1: never routable, and irrelevant to the lint.
+      ansible.builtin.set_fact:
+        nfs_server_ip: 192.0.2.1
+
+    - name: Create the output directory
+      ansible.builtin.file:
+        path: "{{ render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render the manifest templates
+      ansible.builtin.template:
+        src: "{{ item }}"
+        dest: "{{ render_dir }}/{{ item | basename | regex_replace('\\.j2$', '') }}"
+        mode: "0644"
+      loop: "{{ query('fileglob', *render_globs) }}"
+      vars:
+        render_globs: >-
+          {{ render_roles | map('regex_replace', '^(.*)$',
+          render_root ~ '/roles/\1/templates/*.yaml.j2') | list }}
