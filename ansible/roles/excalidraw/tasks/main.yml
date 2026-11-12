@@ -1,0 +1,36 @@
+---
+- name: Create the addon manifest directory
+  ansible.builtin.file:
+    path: "{{ excalidraw_addon_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the Excalidraw manifest
+  ansible.builtin.template:
+    src: excalidraw.yaml.j2
+    dest: "{{ excalidraw_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Apply the Excalidraw manifest
+  # apply always exits 0, so the change detection reads its output.
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ excalidraw_manifest }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: excalidraw_apply
+  changed_when: >-
+    'created' in excalidraw_apply.stdout
+    or 'configured' in excalidraw_apply.stdout
+
+- name: Wait for Excalidraw to be running
+  ansible.builtin.command:
+    cmd: >-
+      kubectl -n {{ excalidraw_namespace }} rollout status
+      deployment/excalidraw --timeout={{ excalidraw_rollout_timeout }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false

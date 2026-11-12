@@ -159,7 +159,7 @@ Two variables in `all/main.yml` are derived from inventory data. `nfs_server_ip`
 `hostvars[groups['storage'][0]].internal_ip`, and `kube_apiserver_endpoint` from
 the control-plane host. This keeps the server and mount addresses consistent.
 
-### The nine plays
+### The ten plays
 
 Collections first — the run fails at parse time without them:
 
@@ -201,10 +201,12 @@ flowchart TB
     P7["7 · control_plane → nfs_provisioner<br/>Deployment + default StorageClass"]
     P8["8 · control_plane → monitoring<br/>local PV, kube-prometheus-stack"]
     P9["9 · control_plane → postgres<br/>CloudNativePG operator, PostgreSQL cluster"]
+    P10["10 · control_plane → excalidraw<br/>Deployment + HTTPRoute on the shared Gateway"]
 
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9 --> P10
     P6 -.->|"needs a schedulable node"| P7
     P7 -.->|"claims volumes through nfs-client"| P9
+    P5 -.->|"owns the shared Gateway"| P10
     P5 -.->|"no node is Ready without a CNI"| P6
     P4 -.->|"mints the join token"| P6
 ```

@@ -85,3 +85,10 @@
   tags: [postgres]
   roles:
     - postgres
+
+- name: Deploy Excalidraw
+  hosts: control_plane
+  become: true
+  tags: [excalidraw]
+  roles:
+    - excalidraw

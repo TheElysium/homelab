@@ -277,6 +277,14 @@ certificates, ten years for the CAs. Nothing in the build renews them.
 **Grafana has a single admin account**, its password held in
 `ansible/group_vars/all/vault.yml`. The service is published on the LAN with no TLS.
 
+**Excalidraw** runs as one stateless replica in the `excalidraw` namespace,
+behind the shared Gateway at `excalidraw.homelab.internal`. Drawings stay in
+each browser's `localStorage`; nothing is stored in the cluster. Served over
+plain HTTP, the page is not a secure context, so the browser withholds
+`crypto.subtle` and shareable links fail; drawing, file save and image export
+work. The public image sends shared scenes and live collaboration sessions
+through excalidraw.com's servers: neither is wanted here.
+
 ## Sizing
 
 ### Disk — the `local-lvm` thin pool

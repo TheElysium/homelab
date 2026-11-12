@@ -1,0 +1,19 @@
+---
+excalidraw_namespace: excalidraw
+
+# The project publishes only "latest"; this is its digest as of 2026-05-06.
+excalidraw_image: docker.io/excalidraw/excalidraw@sha256:f7ee194addd607bf831d2af0f0a34463dd4225e426cf35199ef0b12a803398e9
+
+excalidraw_hostname: excalidraw.homelab.internal
+
+excalidraw_addon_dir: /etc/kubernetes/addons
+excalidraw_manifest: "{{ excalidraw_addon_dir }}/excalidraw.yaml"
+
+excalidraw_resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+excalidraw_rollout_timeout: 180s

@@ -1,0 +1,87 @@
+{{ ansible_managed | comment }}
+#
+# Stateless: drawings live in the browser's localStorage. Exposed through the
+# shared cluster Gateway (ADR-0007), whose name and namespace mirror
+# roles/cilium/defaults/main.yml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ excalidraw_namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalidraw
+  namespace: {{ excalidraw_namespace }}
+  labels:
+    app.kubernetes.io/name: excalidraw
+  annotations:
+    ignore-check.kube-linter.io/run-as-non-root: >-
+      Stock nginx image: the master starts as root to bind port 80 and switch
+      its workers to uid 101.
+    ignore-check.kube-linter.io/no-read-only-root-fs: >-
+      Stock nginx image: the entrypoint rewrites its config and the master
+      writes to /var/cache/nginx and /var/run.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: excalidraw
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: excalidraw
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: excalidraw
+          image: {{ excalidraw_image }}
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [NET_RAW]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+{{ excalidraw_resources | to_nice_yaml(indent=2) | indent(12, true) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: excalidraw
+  namespace: {{ excalidraw_namespace }}
+spec:
+  selector:
+    app.kubernetes.io/name: excalidraw
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: excalidraw
+  namespace: {{ excalidraw_namespace }}
+spec:
+  parentRefs:
+    - name: homelab
+      namespace: gateway-system
+      sectionName: http
+  hostnames:
+    - {{ excalidraw_hostname }}
+  rules:
+    - backendRefs:
+        - name: excalidraw
+          port: 80
