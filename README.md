@@ -45,6 +45,7 @@ The Proxmox host is a single point of failure for the entire lab.
 | `LoadBalancer` addresses | Done | Cilium LB-IPAM over `192.168.1.210`–`.220`, announced by ARP |
 | Ansible — `monitoring` | Done | `kube-prometheus-stack`, Prometheus on a `local` PV, Grafana on `192.168.1.210` |
 | Ansible — `postgres` | Done | CloudNativePG operator, single-instance PostgreSQL cluster on `nfs-client`, PodMonitor + Grafana storage dashboard, read-only `t0_mcp_ro` role for the t0 MCP server |
+| Ansible — `excalidraw` | Done | Stateless whiteboard at `excalidraw.homelab.internal`, behind the shared Gateway |
 
 ## Limitations
 
@@ -61,6 +62,8 @@ homelab/
 ├── .gitignore              state files, tfvars and SSH material are excluded
 ├── .gitattributes          LF line endings, enforced at commit time
 ├── .editorconfig           LF line endings, enforced in the editor
+├── .gates.yml              lint, syntax and security checks run before a commit
+├── .gitleaksignore         reviewed gitleaks false positives
 ├── docs/
 │   ├── architecture.md     what the system is made of
 │   ├── provisioning.md     how it is built, and in which order
@@ -76,11 +79,12 @@ homelab/
     ├── inventory.yml       four hosts, written by hand
     ├── group_vars/         all, k8s_cluster, storage
     ├── requirements.yml    pinned Ansible collections
-    ├── site.yml            nine plays, in dependency order
+    ├── site.yml            ten plays, in dependency order
     ├── checks.yml          read-only verification, safe at any time
+    ├── tools/              offline manifest rendering for kube-linter
     └── roles/              common, nfs_server, kube_prereq, control_plane,
                             helm, cilium, worker, nfs_provisioner, monitoring,
-                            postgres
+                            postgres, excalidraw
 ```
 
 ## Prerequisites

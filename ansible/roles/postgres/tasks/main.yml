@@ -149,9 +149,15 @@
       set -o pipefail &&
       kubectl create secret generic {{ postgres_t0_mcp_dsn_secret }}
       -n {{ postgres_t0_mcp_namespace }}
-      --from-literal={{ postgres_t0_mcp_dsn_key }}='postgresql://{{ postgres_t0_mcp_role }}:{{ postgres_t0_mcp_ro_password | urlencode }}@{{ postgres_cluster_name }}-rw.{{ postgres_namespace }}.svc:5432/{{ postgres_t0_mcp_database }}'
+      --from-literal={{ postgres_t0_mcp_dsn_key }}='{{ postgres_t0_mcp_dsn }}'
       --dry-run=client -o yaml | kubectl apply -f -
     executable: /bin/bash
+  vars:
+    postgres_t0_mcp_dsn: >-
+      {{ 'postgresql://' ~ postgres_t0_mcp_role ~ ':'
+      ~ (postgres_t0_mcp_ro_password | urlencode) ~ '@'
+      ~ postgres_cluster_name ~ '-rw.' ~ postgres_namespace ~ '.svc:5432/'
+      ~ postgres_t0_mcp_database }}
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: postgres_t0_mcp_dsn_apply

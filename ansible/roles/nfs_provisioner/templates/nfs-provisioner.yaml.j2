@@ -79,6 +79,12 @@ metadata:
   namespace: {{ nfs_provisioner_namespace }}
   labels:
     app: nfs-client-provisioner
+  annotations:
+    ignore-check.kube-linter.io/run-as-non-root: >-
+      Creates and removes claim directories on the export as root, which
+      no_root_squash maps to root on the data.
+    ignore-check.kube-linter.io/no-read-only-root-fs: >-
+      Upstream manifest as shipped; a read-only root has not been tested.
 spec:
   replicas: 1
   strategy:
